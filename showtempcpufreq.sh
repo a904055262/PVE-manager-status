@@ -132,6 +132,7 @@ echo '$res->{cpure} = `cat /proc/cpuinfo | grep -i  "cpu mhz"`;' >> $tmpf0
 #检测nvme硬盘
 nvi=0
 for nvme in `ls /dev/nvme[0-9]`;do
+	chmod +s /usr/sbin/smartctl
 	echo '$res->{nvme'"$nvi"'} = `smartctl '"$nvme"' -a -j`;' >> $tmpf0
 
 	cat >> $tmpf << EOF
