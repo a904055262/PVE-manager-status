@@ -3,6 +3,12 @@
 #debug，显示修改后的内容，用于调试
 dmode=0
 
+#脚本路径
+sdir=$(cd $(dirname ${BASH_SOURCE[0]}); pwd)
+sname=`echo "${BASH_SOURCE[0]}" | awk -F '/' '{print $NF}'`
+sap=$sdir/$sname
+echo "脚本路径：$sap"
+
 #需要修改的文件
 np="/usr/share/perl5/PVE/API2/Nodes.pm"
 pvejs="/usr/share/pve-manager/js/pvemanagerlib.js"
@@ -54,6 +60,11 @@ case "$1" in
 		}
 		exit 0
 	;;
+	'remod')
+		echo 重新修改
+		$sap restore
+		$sap
+	;;
 esac
 
 #检测是否已经修改过
@@ -82,7 +93,7 @@ cat > $tmpf << 'EOF'
 			
 			let b = value.trim().split(/\)\s+(?=[A-z]+-)/).sort();
 			let c = b.map(function (v){
-				let name = v.match(/^[^-]+/)[0] + ': ';
+				let name = v.match(/^[^-]+/)[0].toUpperCase() + ': ';
 				
 				let temp = v.match(/(?<=:\s+\+)[\d\.]+/g).map( v => v + '°C');
 				
@@ -140,7 +151,7 @@ for nvme in `ls /dev/nvme[0-9]`;do
 		  itemId: 'nvme${nvi}0',
 		  colspan: 2,
 		  printBar: false,
-		  title: gettext('nvme硬盘'),
+		  title: gettext('NVME硬盘'),
 		  textField: 'nvme${nvi}',
 		  renderer:function(value){
 				//return value;
@@ -152,13 +163,13 @@ for nvme in `ls /dev/nvme[0-9]`;do
 					return '无权限访问这块硬盘信息'
 				}
 				// 温度
-				let temp = "温度：" + v.temperature.current;
+				let temp = "温度: " + v.temperature.current + '°C';
 				// 通电时间
-				let pot = "通电时间：" + v.power_on_time.hours + '小时' + ',次数：'+ v.power_cycle_count;
+				let pot = "通电时间: " + v.power_on_time.hours + '小时' + ',次数: '+ v.power_cycle_count;
 				let log = v.nvme_smart_health_information_log;
 				// smart状态
-				let smart = 'SMART状态：' + (v.smart_status.passed? '正常' : '失败');
-				let t = model + '|' + temp + '|' + pot + '|' + smart;
+				let smart = 'SMART状态: ' + (v.smart_status.passed? '正常' : '警告！硬盘故障！');
+				let t = model + ' | ' + temp + ' | ' + pot + ' | ' + smart;
 				return t;
 				//console.log(t);
 			}
