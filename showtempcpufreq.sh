@@ -68,20 +68,6 @@ esac
 echo 备份源文件
 backup
 
-therm='$res->{thermalstate} = `sensors`;'
-cpure='$res->{cpure} = `cat /proc/cpuinfo | grep -i  "cpu mhz"`;'
-
-echo 开始修改nodes.pm文件
-if [ "$(sed -n "/PVE::pvecfg::version_text()/{=;p;q}" $np)" ];then #确认修改点
-	sed -i "/PVE::pvecfg::version_text()/a $cpure\n$therm" $np
-	
-	[ $dmode -eq 1 ] && sed -n "/PVE::pvecfg::version_text()/,+5p" $np
-else
-	echo '找不到nodes.pm文件的修改点'
-	fail
-fi
-
-
 tmpf=.sdfadfasdf.tmp
 touch $tmpf
 cat > $tmpf << 'EOF'
@@ -136,6 +122,69 @@ cat > $tmpf << 'EOF'
 	},
 EOF
 
+
+tmpf0=.dfadfasdf.tmp
+touch $tmpf0
+echo '$res->{thermalstate} = `sensors`;' > $tmpf0
+echo '$res->{cpure} = `cat /proc/cpuinfo | grep -i  "cpu mhz"`;' >> $tmpf0
+
+
+#检测nvme硬盘
+nvi=0
+for nvme in `ls /dev/nvme[0-9]`;do
+	echo '$res->{nvme'"$nvi"'} = `smartctl '"$nvme"' -a -j`;' >> $tmpf0
+
+	cat >> $tmpf << EOF
+	{
+		  itemId: 'nvme${nvi}0',
+		  colspan: 2,
+		  printBar: false,
+		  title: gettext('nvme硬盘'),
+		  textField: 'nvme${nvi}',
+		  renderer:function(value){
+				//return value;
+			try{
+				let  v = JSON.parse(value);
+				//名字
+				let model = v.model_name;
+				if (! model) {
+					return '无权限访问这块硬盘信息'
+				}
+				// 温度
+				let temp = "温度：" + v.temperature.current;
+				// 通电时间
+				let pot = "通电时间：" + v.power_on_time.hours + '小时' + ',次数：'+ v.power_cycle_count;
+				let log = v.nvme_smart_health_information_log;
+				// smart状态
+				let smart = 'SMART状态：' + (v.smart_status.passed? '正常' : '失败');
+				let t = model + '|' + temp + '|' + pot + '|' + smart;
+				return t;
+				//console.log(t);
+			}
+			catch(e){
+				return '无法获得有效消息';
+			};
+
+		 }
+	},
+EOF
+	let nvi++
+done
+
+
+echo 开始修改nodes.pm文件
+if [ "$(sed -n "/PVE::pvecfg::version_text()/{=;p;q}" $np)" ];then #确认修改点
+	#r追加文本后面必须跟回车，否则r 后面的文字都会被当成文件名，导致脚本出错
+	sed -i "/PVE::pvecfg::version_text()/{r $tmpf0
+	}" $np
+	[ $dmode -eq 1 ] && sed -n "/PVE::pvecfg::version_text()/,+5p" $np
+else
+	echo '找不到nodes.pm文件的修改点'
+	
+	fail
+fi
+
+
 echo 开始修改pvemanagerlib.js文件
 if [ "$(sed -n "/pveversion/{=;p;q}" $pvejs)" ];then #确认修改点
 	#r追加文本后面必须跟回车，否则r 后面的文字都会被当成文件名，导致脚本出错
@@ -143,26 +192,31 @@ if [ "$(sed -n "/pveversion/{=;p;q}" $pvejs)" ];then #确认修改点
 	}" $pvejs
 	
 	[ $dmode -eq 1 ] && sed -n "/pveversion/,+8p" $pvejs
-	rm $tmpf
+	#rm $tmpf
 else
 	echo '找不到pvemanagerlib.js文件的修改点'
-	rm $tmpf
+	#rm $tmpf
 	fail
 fi
 
 echo 修改页面高度
+#统计添加了几行
+addRs=`awk 'END{print NR}' $tmpf0`
+addHei=$(( 30 * addRs))
 
+#原高度300
 if [ "$(sed -n "/widget.pveNodeStatus/{=;p;q}" $pvejs)" ]; then 
-	sed -i -E '/widget\.pveNodeStatus/,+3{/height:/{s#[0-9]+#360#}}' $pvejs
+	sed -i -E "/widget\.pveNodeStatus/,+4{/height:/{s#[0-9]+#$(( 300 + addHei))#}}" $pvejs
 	
-	[ $dmode -eq 1 ] && sed -n "/widget.pveNodeStatus/,+3p" $pvejs
+	[ $dmode -eq 1 ] && sed -n "/widget.pveNodeStatus/,+4p" $pvejs
 else
 	echo 找不到修改高度的修改点
 	fail
 fi
 
+#原高度400
 if [ "$(sed -n "/\[logView\]/{=;p;q}" $pvejs)" ]; then 
-	sed -i -E '/\[logView\]/,+4{/height:/{s#[0-9]+#460#}}' $pvejs
+	sed -i -E "/\[logView\]/,+4{/height:/{s#[0-9]+#$(( 400 + addHei))#}}" $pvejs
 	
 	[ $dmode -eq 1 ] && sed -n "/\[logView\]/,+4p" $pvejs
 else
