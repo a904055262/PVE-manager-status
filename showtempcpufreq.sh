@@ -50,19 +50,26 @@ fail() {
 #还原修改
 case "$1" in 
 	"restore")
-		[ -e $np.$pvever.bak ] && {
+		if [ -e $np.$pvever.bak ];then  
 			restore
 			echo 已还原修改
-			echo "请刷新浏览器缓存：Shift+F5"
-			systemctl restart pveproxy
-		} || {
+			
+			if [ "$2" != 'remod' ];then 
+				echo "请刷新浏览器缓存：Shift+F5"
+				systemctl restart pveproxy
+			else 
+				echo -----
+			fi
+		else
 			echo 文件没有被修改过
-		}
+		fi
+		
 		exit 0
 	;;
 	'remod')
-		echo 重新修改
-		$sap restore
+		echo 强制重新修改
+		echo -----------
+		$sap restore 'remod'
 		$sap
 		exit 0
 	;;
