@@ -126,6 +126,7 @@ cat > $tmpf << 'EOF'
 		  title: gettext('CPU频率'),
 		  textField: 'cpure',
 		  renderer:function(value){
+			//return value;
 			const m = value.match(/(?<=:\s+)\d+/g);
 			const m2 = m.map(e => e + 'MHz');
 			return m2.join(' | ');
@@ -136,9 +137,10 @@ EOF
 
 tmpf0=.dfadfasdf.tmp
 touch $tmpf0
-echo '$res->{thermalstate} = `sensors`;' > $tmpf0
-echo '$res->{cpure} = `cat /proc/cpuinfo | grep -i  "cpu mhz"`;' >> $tmpf0
-
+cat > $tmpf0 << 'EOF'
+$res->{thermalstate} = `sensors`;
+$res->{cpure} = `cat /proc/cpuinfo | grep -i  "cpu mhz"`;
+EOF
 
 #检测nvme硬盘
 nvi=0
@@ -151,7 +153,7 @@ for nvme in `ls /dev/nvme[0-9]`;do
 		  itemId: 'nvme${nvi}0',
 		  colspan: 2,
 		  printBar: false,
-		  title: gettext('NVME硬盘'),
+		  title: gettext('NVME硬盘${nvi}'),
 		  textField: 'nvme${nvi}',
 		  renderer:function(value){
 				//return value;
@@ -160,7 +162,7 @@ for nvme in `ls /dev/nvme[0-9]`;do
 				//名字
 				let model = v.model_name;
 				if (! model) {
-					return '无权限访问这块硬盘信息'
+					return '找不到硬盘，直通或已被卸载';
 				}
 				// 温度
 				let temp = "温度: " + v.temperature.current + '°C';
@@ -172,8 +174,7 @@ for nvme in `ls /dev/nvme[0-9]`;do
 				let t = model + ' | ' + temp + ' | ' + pot + ' | ' + smart;
 				return t;
 				//console.log(t);
-			}
-			catch(e){
+			}catch(e){
 				return '无法获得有效消息';
 			};
 
@@ -181,6 +182,76 @@ for nvme in `ls /dev/nvme[0-9]`;do
 	},
 EOF
 	let nvi++
+done
+
+
+#机械/固态硬盘输出信息逻辑,
+#如果硬盘不存在就输出空JSON
+#如果存在，那么判断是不是机械，如果是机械，看是不是休眠，如果没休眠和固态硬盘一样输出smart
+# [ -b /dev/sdb ] && {
+	# cat /sys/block/sdb/queue/rotational | grep -q 1 && {
+		# hdparm -C /dev/sdb | grep -iq 'standby' && echo 'standby' || smartctl /dev/sdb -a -j
+	# } || {
+		# smartctl /dev/sdb -a -j
+	# }
+# } || {
+	# echo '{}'
+# }
+
+
+sdi=0
+#检测机械键盘
+for sd in `ls /dev/sd[a-z]`;do
+
+	#检测是否是真的机械键盘
+	sdsn=`echo $sd | awk -F '/' '{print $NF}'`
+	sdcr=/sys/block/$sdsn/queue/rotational
+	sdtype="机械硬盘$sdi"
+	if [ ! -e $sdcr ];then
+		continue
+	else
+		if [ "`cat $sdcr`" -eq 0 ];then 
+			sdtype="固态硬盘$sdi"
+		fi
+	fi
+	
+	//echo '$res->{sd'"$sdi"'} = `smartctl '"$sd"' -a -j`;' >> $tmpf0
+	echo '$res->{sd'"$sdi"'} = `[ -b '"$sd"' ] && { cat /sys/block/'"$sdsn"'/queue/rotational | grep -q 1 && { hdparm -C '"$sd"' | grep -iq "standby" && echo "standby" || smartctl '"$sd"' -a -j; } || { smartctl '"$sd"' -a -j;} ;} || { echo "{}" ;}`;' >> $tmpf0
+
+	cat >> $tmpf << EOF
+	{
+		  itemId: 'sd${sdi}0',
+		  colspan: 2,
+		  printBar: false,
+		  title: gettext('${sdtype}'),
+		  textField: 'sd${sdi}',
+		  renderer:function(value){
+			//return value;
+			if (value === 'standy') return '硬盘休眠中，避免唤醒，不检测SMART';
+			try{
+				let  v = JSON.parse(value);
+				//名字
+				let model = v.model_name;
+				if (! model) {
+					return '找不到硬盘，直通或已被卸载';
+				}
+				// 温度
+				let temp = "温度: " + v.temperature.current + '°C';
+				// 通电时间
+				let pot = "通电时间: " + v.power_on_time.hours + '小时' + ',次数: '+ v.power_cycle_count;
+				let log = v.nvme_smart_health_information_log;
+				// smart状态
+				let smart = 'SMART状态: ' + (v.smart_status.passed? '正常' : '警告！硬盘故障！');
+				let t = model + ' | ' + temp + ' | ' + pot + ' | ' + smart;
+				return t;
+				//console.log(t);
+			}catch(e){
+				return '无法获得有效消息';
+			};
+		 }
+	},
+EOF
+	let sdi++
 done
 
 
@@ -218,9 +289,12 @@ addHei=$(( 30 * addRs))
 
 #原高度300
 if [ "$(sed -n "/widget.pveNodeStatus/{=;p;q}" $pvejs)" ]; then 
-	sed -i -E "/widget\.pveNodeStatus/,+4{/height:/{s#[0-9]+#$(( 300 + addHei))#}}" $pvejs
+	#获取原高度
+	wph=`sed -n -E "/widget\.pveNodeStatus/,+4{/height:/s/[^0-9]+([0-9]+).*/\1/p}" $pvejs`
 	
-	[ $dmode -eq 1 ] && sed -n "/widget.pveNodeStatus/,+4p" $pvejs
+	sed -i -E "/widget\.pveNodeStatus/,+4{/height:/{s#[0-9]+#$(( wph + addHei))#}}" $pvejs
+	
+	[ $dmode -eq 1 ] && sed -n "/widget.pveNodeStatus/,+4p" $pvejs | grep height
 else
 	echo 找不到修改高度的修改点
 	fail
@@ -228,9 +302,12 @@ fi
 
 #原高度400
 if [ "$(sed -n "/\[logView\]/{=;p;q}" $pvejs)" ]; then 
-	sed -i -E "/\[logView\]/,+4{/height:/{s#[0-9]+#$(( 400 + addHei))#}}" $pvejs
+
+	lgh=`sed -n -E "/\[logView\]/,+4{/height:/s/[^0-9]+([0-9]+).*/\1/p}" $pvejs`
 	
-	[ $dmode -eq 1 ] && sed -n "/\[logView\]/,+4p" $pvejs
+	sed -i -E "/\[logView\]/,+4{/height:/{s#[0-9]+#$(( lgh + addHei))#}}" $pvejs
+	
+	[ $dmode -eq 1 ] && sed -n "/\[logView\]/,+4p" $pvejs | grep height
 else
 	echo 找不到修改高度的修改点
 	fail
@@ -245,7 +322,7 @@ echo 去除订阅弹窗
 if [ "$(sed -n '/\/nodes\/localhost\/subscription/{=;p;q}' $plib)" ];then 
 	sed -i '/\/nodes\/localhost\/subscription/,+10s/Ext.Msg.show/void/' $plib 
 	
-	[ $dmode -eq 1 ] && sed -n "/\/nodes\/localhost\/subscription/,+10p" $plib 
+	[ $dmode -eq 1 ] && sed -n "/\/nodes\/localhost\/subscription/,+10p" $plib
 else 
 	echo 找不到修改点，放弃修改这个
 fi
