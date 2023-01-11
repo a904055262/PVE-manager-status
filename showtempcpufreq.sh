@@ -125,11 +125,20 @@ cat > $tmpf << 'EOF'
 		  printBar: false,
 		  title: gettext('CPU频率'),
 		  textField: 'cpure',
-		  renderer:function(value){
-			//return value;
-			const m = value.match(/(?<=:\s+)\d+/g);
-			const m2 = m.map(e => e + 'MHz');
-			return m2.join(' | ');
+		  renderer:function(v){
+			//return v;
+			let m = v.match(/(?<=cpu[^\d]+)\d+/ig);
+			let i=0
+			let m2 = m.map(e =>{
+				let t = `${i}: ${e}`;
+				i++
+				return t;
+			});
+			m2 = m2.join(' | ');
+			let gov = v.match(/(?<=gov:\s*).+/i)[0].toUpperCase();
+			let min = v.match(/(?<=min[^\d+]+)\d+/i)[0]/1000;
+			let max = v.match(/(?<=max[^\d+]+)\d+/i)[0]/1000;
+			return `${m2} | MAX: ${max} | MIN: ${min} | 调速器: ${gov}`
 		 }
 	},
 EOF
@@ -139,8 +148,9 @@ tmpf0=.dfadfasdf.tmp
 touch $tmpf0
 cat > $tmpf0 << 'EOF'
 $res->{thermalstate} = `sensors`;
-$res->{cpure} = `cat /proc/cpuinfo | grep -i  "cpu mhz"`;
+$res->{cpure} = `cat /proc/cpuinfo | grep -i  "cpu mhz";echo -n gov:; cat /sys/devices/system/cpu/cpufreq/policy0/scaling_governor; echo -n min:; cat /sys/devices/system/cpu/cpufreq/policy0/cpuinfo_min_freq;echo -n max:; cat /sys/devices/system/cpu/cpufreq/policy0/cpuinfo_max_freq;`;
 EOF
+#$res->{cpure} = `cat /proc/cpuinfo | grep -i  "cpu mhz"`;
 
 #检测nvme硬盘
 nvi=0
@@ -167,11 +177,14 @@ for nvme in `ls /dev/nvme[0-9]`;do
 				// 温度
 				let temp = "温度: " + v.temperature.current + '°C';
 				// 通电时间
-				let pot = "通电时间: " + v.power_on_time.hours + '小时' + ',次数: '+ v.power_cycle_count;
+				let pot = "通电: " + v.power_on_time.hours + '时' + ',次: '+ v.power_cycle_count;
 				let log = v.nvme_smart_health_information_log;
+				let read = (log.data_units_read / 1956882).toFixed(1) + 'T';
+				let write = (log.data_units_written / 1956882).toFixed(1) + 'T'
+				
 				// smart状态
-				let smart = 'SMART状态: ' + (v.smart_status.passed? '正常' : '警告！硬盘故障！');
-				let t = model + ' | ' + temp + ' | ' + pot + ' | ' + smart;
+				let smart = 'SMART: ' + (v.smart_status.passed? '正常' : '警告！');
+				let t = model + ' | ' + temp + ' | ' + pot + ' | ' + '读/写: ' + read + '/' + write + ' | ' + smart;
 				return t;
 				//console.log(t);
 			}catch(e){
@@ -238,10 +251,10 @@ for sd in `ls /dev/sd[a-z]`;do
 				// 温度
 				let temp = "温度: " + v.temperature.current + '°C';
 				// 通电时间
-				let pot = "通电时间: " + v.power_on_time.hours + '小时' + ',次数: '+ v.power_cycle_count;
+				let pot = "通电: " + v.power_on_time.hours + '时' + ',次: '+ v.power_cycle_count;
 				let log = v.nvme_smart_health_information_log;
 				// smart状态
-				let smart = 'SMART状态: ' + (v.smart_status.passed? '正常' : '警告！硬盘故障！');
+				let smart = 'SMART: ' + (v.smart_status.passed? '正常' : '警告！');
 				let t = model + ' | ' + temp + ' | ' + pot + ' | ' + smart;
 				return t;
 				//console.log(t);
@@ -285,7 +298,7 @@ fi
 echo 修改页面高度
 #统计添加了几行
 addRs=`awk 'END{print NR}' $tmpf0`
-addHei=$(( 30 * addRs))
+addHei=$(( 32 * addRs))
 
 #原高度300
 if [ "$(sed -n "/widget.pveNodeStatus/{=;p;q}" $pvejs)" ]; then 
