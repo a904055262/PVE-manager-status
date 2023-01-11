@@ -156,7 +156,15 @@ tmpf0=.dfadfasdf.tmp
 touch $tmpf0
 cat > $tmpf0 << 'EOF'
 $res->{thermalstate} = `sensors`;
-$res->{cpure} = `cat /proc/cpuinfo | grep -i  "cpu mhz";echo -n gov:; cat /sys/devices/system/cpu/cpufreq/policy0/scaling_governor; echo -n min:; cat /sys/devices/system/cpu/cpufreq/policy0/cpuinfo_min_freq;echo -n max:; cat /sys/devices/system/cpu/cpufreq/policy0/cpuinfo_max_freq;`;
+$res->{cpure} = `
+	cat /proc/cpuinfo | grep -i  "cpu mhz"
+	echo -n 'gov:'
+	cat /sys/devices/system/cpu/cpufreq/policy0/scaling_governor
+	echo -n 'min:'
+	cat /sys/devices/system/cpu/cpufreq/policy0/cpuinfo_min_freq
+	echo -n 'max:'
+	cat /sys/devices/system/cpu/cpufreq/policy0/cpuinfo_max_freq
+`;
 EOF
 #$res->{cpure} = `cat /proc/cpuinfo | grep -i  "cpu mhz"`;
 
@@ -165,8 +173,13 @@ echo 检测中的系统NVME硬盘
 nvi=0
 for nvme in `ls /dev/nvme[0-9]`;do
 	chmod +s /usr/sbin/smartctl
-	echo '$res->{nvme'"$nvi"'} = `smartctl '"$nvme"' -a -j`;' >> $tmpf0
+	#echo '$res->{nvme'"$nvi"'} = `smartctl '"$nvme"' -a -j`;' >> $tmpf0
 
+	cat >> $tmpf0 << EOF
+\$res->{nvme$nvi} = \`smartctl $nvme -a -j\`;
+EOF
+	
+	
 	cat >> $tmpf << EOF
 	{
 		  itemId: 'nvme${nvi}0',
@@ -208,18 +221,10 @@ done
 
 echo "已添加 $nvi 块NVME硬盘"
 
+#[] && 型条件判断，嵌套的条件判断的非 || 后面一定要写动作，否则会穿透到上一层的非条件
 #机械/固态硬盘输出信息逻辑,
 #如果硬盘不存在就输出空JSON
 #如果存在，那么判断是不是机械，如果是机械，看是不是休眠，如果没休眠和固态硬盘一样输出smart
-# [ -b /dev/sdb ] && {
-	# cat /sys/block/sdb/queue/rotational | grep -q 1 && {
-		# hdparm -C /dev/sdb | grep -iq 'standby' && echo 'standby' || smartctl /dev/sdb -a -j
-	# } || {
-		# smartctl /dev/sdb -a -j
-	# }
-# } || {
-	# echo '{}'
-# }
 
 
 sdi=0
@@ -240,8 +245,21 @@ for sd in `ls /dev/sd[a-z]`;do
 		fi
 	fi
 	
-	#echo '$res->{sd'"$sdi"'} = `smartctl '"$sd"' -a -j`;' >> $tmpf0
-	echo '$res->{sd'"$sdi"'} = `[ -b '"$sd"' ] && { cat /sys/block/'"$sdsn"'/queue/rotational | grep -q 1 && { hdparm -C '"$sd"' | grep -iq "standby" && echo "standby" || smartctl '"$sd"' -a -j; } || { smartctl '"$sd"' -a -j;} ;} || { echo "{}" ;}`;' >> $tmpf0
+	#echo '$res->{sd'"$sdi"'} = `[ -b '"$sd"' ] && { cat /sys/block/'"$sdsn"'/queue/rotational | grep -q 1 && { hdparm -C '"$sd"' | grep -iq "standby" && echo "standby" || smartctl '"$sd"' -a -j; } || { smartctl '"$sd"' -a -j;} ;} || { echo "{}" ;}`;' >> $tmpf0
+
+	cat >> $tmpf0 << EOF
+\$res->{sd$sdi} = \`
+	if [ -b $sd ];then
+		if cat /sys/block/$sdsn/queue/rotational | grep -q 1;then 
+			hdparm -C $sd | grep -iq 'standby' && echo 'standby' || smartctl $sd -a -j
+		else 
+			smartctl $sd -a -j
+		fi
+	else
+		echo '{}'
+	fi
+\`;
+EOF
 
 	cat >> $tmpf << EOF
 	{
@@ -278,7 +296,7 @@ for sd in `ls /dev/sd[a-z]`;do
 EOF
 	let sdi++
 done
-echo "已添加 $sdi SATA固态和机械硬盘"
+echo "已添加 $sdi 块SATA固态和机械硬盘"
 
 echo 开始修改nodes.pm文件
 if [ "$(sed -n "/PVE::pvecfg::version_text()/{=;p;q}" $np)" ];then #确认修改点
@@ -308,8 +326,10 @@ else
 fi
 
 echo 修改页面高度
-#统计添加了几行
-addRs=`awk 'END{print NR}' $tmpf0`
+#统计加了几条
+#addRs=`awk 'END{print NR}' $tmpf0`
+addRs=`grep -c '\$res' $tmpf0`
+[ $dmode -eq 1 ] && echo 添加了 $addRs 条
 addHei=$(( 32 * addRs))
 
 #原高度300
