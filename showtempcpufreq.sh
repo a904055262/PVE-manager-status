@@ -215,11 +215,12 @@ done
 sdi=0
 #检测机械键盘
 for sd in `ls /dev/sd[a-z]`;do
-
+	chmod +s /usr/sbin/smartctl
 	#检测是否是真的机械键盘
 	sdsn=`echo $sd | awk -F '/' '{print $NF}'`
 	sdcr=/sys/block/$sdsn/queue/rotational
 	sdtype="机械硬盘$sdi"
+	
 	if [ ! -e $sdcr ];then
 		continue
 	else
@@ -228,7 +229,7 @@ for sd in `ls /dev/sd[a-z]`;do
 		fi
 	fi
 	
-	//echo '$res->{sd'"$sdi"'} = `smartctl '"$sd"' -a -j`;' >> $tmpf0
+	#echo '$res->{sd'"$sdi"'} = `smartctl '"$sd"' -a -j`;' >> $tmpf0
 	echo '$res->{sd'"$sdi"'} = `[ -b '"$sd"' ] && { cat /sys/block/'"$sdsn"'/queue/rotational | grep -q 1 && { hdparm -C '"$sd"' | grep -iq "standby" && echo "standby" || smartctl '"$sd"' -a -j; } || { smartctl '"$sd"' -a -j;} ;} || { echo "{}" ;}`;' >> $tmpf0
 
 	cat >> $tmpf << EOF
