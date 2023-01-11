@@ -64,6 +64,7 @@ case "$1" in
 		echo 重新修改
 		$sap restore
 		$sap
+		exit 0
 	;;
 esac
 
@@ -153,6 +154,7 @@ EOF
 #$res->{cpure} = `cat /proc/cpuinfo | grep -i  "cpu mhz"`;
 
 #检测nvme硬盘
+echo 检测中的系统NVME硬盘
 nvi=0
 for nvme in `ls /dev/nvme[0-9]`;do
 	chmod +s /usr/sbin/smartctl
@@ -197,6 +199,7 @@ EOF
 	let nvi++
 done
 
+echo "已添加 $nvi 块NVME硬盘"
 
 #机械/固态硬盘输出信息逻辑,
 #如果硬盘不存在就输出空JSON
@@ -214,6 +217,7 @@ done
 
 sdi=0
 #检测机械键盘
+echo 检测中的SATA固态和机械硬盘
 for sd in `ls /dev/sd[a-z]`;do
 	chmod +s /usr/sbin/smartctl
 	#检测是否是真的机械键盘
@@ -267,7 +271,7 @@ for sd in `ls /dev/sd[a-z]`;do
 EOF
 	let sdi++
 done
-
+echo "已添加 $sdi SATA固态和机械硬盘"
 
 echo 开始修改nodes.pm文件
 if [ "$(sed -n "/PVE::pvecfg::version_text()/{=;p;q}" $np)" ];then #确认修改点
@@ -341,12 +345,12 @@ else
 	echo 找不到修改点，放弃修改这个
 fi
 
-
+echo ------------------------
 echo "修改完成"
 echo "请刷新浏览器缓存：Shift+F5"
 echo "如果你看到主页面提示连接错误或者没看到温度和频率，请按：Shift+F5，刷新浏览器缓存！"
 echo "如果你对效果不满意，请给脚本加上 restore 参数运行，可以还原修改"
 
-sleep 1s && systemctl restart pveproxy
+systemctl restart pveproxy
 
 
