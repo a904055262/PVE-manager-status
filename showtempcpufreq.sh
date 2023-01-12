@@ -5,7 +5,7 @@ dmode=0
 
 #脚本路径
 sdir=$(cd $(dirname ${BASH_SOURCE[0]}); pwd)
-sname=`echo "${BASH_SOURCE[0]}" | awk -F '/' '{print $NF}'`
+sname=`awk -F '/' '{print $NF}' <<< ${BASH_SOURCE[0]}`
 sap=$sdir/$sname
 echo "脚本路径：$sap"
 
@@ -26,36 +26,37 @@ if ! sensors > /dev/null 2>&1; then
 fi
 
 #获取版本号
-pvever=$(pveversion | awk -F"/" '{print $2}')
-echo 你的PVE版本号：$pvever
+pvever=`pveversion | awk -F"/" '{print $2}'`
+echo "你的PVE版本号：$pvever"
 
 backup() {
-	cp $np $np.$pvever.bak
-	cp $pvejs $pvejs.$pvever.bak
-	cp $plib $plib.$pvever.bak
+	cp "$np" "$np.$pvever.bak"
+	cp "$pvejs" "$pvejs.$pvever.bak"
+	cp "$plib" "$plib.$pvever.bak"
 }
 
 restore() {
-	mv $np.$pvever.bak $np
-	mv $pvejs.$pvever.bak $pvejs
-	mv $plib.$pvever.bak $plib 
+	mv "$np.$pvever.bak" "$np"
+	mv "$pvejs.$pvever.bak" "$pvejs"
+	mv "$plib.$pvever.bak" "$plib" 
 }
 
 fail() {
-	echo 修改失败，可能不兼容你的pve版本：$pvever，开始还原
+	echo "修改失败，可能不兼容你的pve版本：$pvever，开始还原"
 	restore
+	echo 还原完成
 	exit 1
 }
 
 #还原修改
 case "$1" in 
-	"restore")
-		if [ -e $np.$pvever.bak ];then  
+	restore)
+		if [ -e "$np.$pvever.bak" ];then  
 			restore
 			echo 已还原修改
 			
 			if [ "$2" != 'remod' ];then 
-				echo "请刷新浏览器缓存：Shift+F5"
+				echo -e "请刷新浏览器缓存：\033[31mShift+F5\033[0m"
 				systemctl restart pveproxy
 			else 
 				echo -----
@@ -66,29 +67,31 @@ case "$1" in
 		
 		exit 0
 	;;
-	'remod')
+	remod)
 		echo 强制重新修改
 		echo -----------
-		$sap restore 'remod'
-		$sap
+		"$sap" restore remod
+		"$sap"
 		exit 0
 	;;
 esac
 
 #检测是否已经修改过
-[ -e $np.$pvever.bak ] && {
-	echo 已经修改过，请勿重复修改
-	echo 如果没有生效，或者页面一直转圈圈
-	echo 请使用 shift+F5 刷新浏览器缓存
-	echo 如果你想还原修改，请执行脚本加上 restore 参数
+[ -e "$np.$pvever.bak" ] && {
+	echo -e "
+	已经修改过，请勿重复修改
+	如果没有生效，或者页面一直转圈圈
+	请使用 \033[31mShift+F5\033[0m 刷新浏览器缓存
+	如果一直异常，请执行：\033[31m\"$sap\" restore\033[0m 命令，可以还原修改
+	"
 	exit 1
 }
- 
+
 echo 备份源文件
 backup
 
 tmpf=.sdfadfasdf.tmp
-touch $tmpf
+
 cat > $tmpf << 'EOF'
 	{
 		itemId: 'thermal',
@@ -153,7 +156,7 @@ EOF
 
 
 tmpf0=.dfadfasdf.tmp
-touch $tmpf0
+
 cat > $tmpf0 << 'EOF'
 $res->{thermalstate} = `sensors`;
 $res->{cpure} = `
@@ -166,144 +169,151 @@ $res->{cpure} = `
 	cat /sys/devices/system/cpu/cpufreq/policy0/cpuinfo_max_freq
 `;
 EOF
-#$res->{cpure} = `cat /proc/cpuinfo | grep -i  "cpu mhz"`;
 
 #检测nvme硬盘
 echo 检测中的系统NVME硬盘
 nvi=0
-for nvme in `ls /dev/nvme[0-9]`;do
-	chmod +s /usr/sbin/smartctl
-	#echo '$res->{nvme'"$nvi"'} = `smartctl '"$nvme"' -a -j`;' >> $tmpf0
+if ls /dev/nvme[0-9] >/dev/null 2>&1;then 
 
-	cat >> $tmpf0 << EOF
-\$res->{nvme$nvi} = \`smartctl $nvme -a -j\`;
+	for nvme in `ls /dev/nvme[0-9]`; do
+		chmod +s /usr/sbin/smartctl
+		#echo '$res->{nvme'"$nvi"'} = `smartctl '"$nvme"' -a -j`;' >> $tmpf0
+
+		cat >> $tmpf0 << EOF
+	\$res->{nvme$nvi} = \`smartctl $nvme -a -j\`;
 EOF
-	
-	
-	cat >> $tmpf << EOF
-	{
-		  itemId: 'nvme${nvi}0',
-		  colspan: 2,
-		  printBar: false,
-		  title: gettext('NVME硬盘${nvi}'),
-		  textField: 'nvme${nvi}',
-		  renderer:function(value){
-				//return value;
-			try{
-				let  v = JSON.parse(value);
-				//名字
-				let model = v.model_name;
-				if (! model) {
-					return '找不到硬盘，直通或已被卸载';
-				}
-				// 温度
-				let temp = "温度: " + v.temperature.current + '°C';
-				// 通电时间
-				let pot = "通电: " + v.power_on_time.hours + '时' + ',次: '+ v.power_cycle_count;
-				let log = v.nvme_smart_health_information_log;
-				let read = (log.data_units_read / 1956882).toFixed(1) + 'T';
-				let write = (log.data_units_written / 1956882).toFixed(1) + 'T'
-				
-				// smart状态
-				let smart = 'SMART: ' + (v.smart_status.passed? '正常' : '警告！');
-				let t = model + ' | ' + temp + ' | ' + pot + ' | ' + '读/写: ' + read + '/' + write + ' | ' + smart;
-				return t;
-				//console.log(t);
-			}catch(e){
-				return '无法获得有效消息';
-			};
+		
+		
+		cat >> $tmpf << EOF
+		{
+			  itemId: 'nvme${nvi}0',
+			  colspan: 2,
+			  printBar: false,
+			  title: gettext('NVME硬盘${nvi}'),
+			  textField: 'nvme${nvi}',
+			  renderer:function(value){
+					//return value;
+				try{
+					let  v = JSON.parse(value);
+					//名字
+					let model = v.model_name;
+					if (! model) {
+						return '找不到硬盘，直通或已被卸载';
+					}
+					// 温度
+					let temp = "温度: " + v.temperature.current + '°C';
+					// 通电时间
+					let pot = "通电: " + v.power_on_time.hours + '时' + ',次: '+ v.power_cycle_count;
+					let log = v.nvme_smart_health_information_log;
+					let read = (log.data_units_read / 1956882).toFixed(1) + 'T';
+					let write = (log.data_units_written / 1956882).toFixed(1) + 'T'
+					
+					// smart状态
+					let smart = 'SMART: ' + (v.smart_status.passed? '正常' : '警告！');
+					let t = model + ' | ' + temp + ' | ' + pot + ' | ' + '读/写: ' + read + '/' + write + ' | ' + smart;
+					return t;
+					//console.log(t);
+				}catch(e){
+					return '无法获得有效消息';
+				};
 
-		 }
-	},
+			 }
+		},
 EOF
-	let nvi++
-done
-
+		let nvi++
+	done
+fi
 echo "已添加 $nvi 块NVME硬盘"
 
-#[] && 型条件判断，嵌套的条件判断的非 || 后面一定要写动作，否则会穿透到上一层的非条件
-#机械/固态硬盘输出信息逻辑,
-#如果硬盘不存在就输出空JSON
-#如果存在，那么判断是不是机械，如果是机械，看是不是休眠，如果没休眠和固态硬盘一样输出smart
 
-
-sdi=0
 #检测机械键盘
 echo 检测中的SATA固态和机械硬盘
-for sd in `ls /dev/sd[a-z]`;do
-	chmod +s /usr/sbin/smartctl
-	#检测是否是真的机械键盘
-	sdsn=`echo $sd | awk -F '/' '{print $NF}'`
-	sdcr=/sys/block/$sdsn/queue/rotational
-	sdtype="机械硬盘$sdi"
-	
-	if [ ! -e $sdcr ];then
-		continue
-	else
-		if [ "`cat $sdcr`" -eq 0 ];then 
-			sdtype="固态硬盘$sdi"
-		fi
-	fi
-	
-	#echo '$res->{sd'"$sdi"'} = `[ -b '"$sd"' ] && { cat /sys/block/'"$sdsn"'/queue/rotational | grep -q 1 && { hdparm -C '"$sd"' | grep -iq "standby" && echo "standby" || smartctl '"$sd"' -a -j; } || { smartctl '"$sd"' -a -j;} ;} || { echo "{}" ;}`;' >> $tmpf0
+sdi=0
 
-	cat >> $tmpf0 << EOF
-\$res->{sd$sdi} = \`
-	if [ -b $sd ];then
-		if cat /sys/block/$sdsn/queue/rotational | grep -q 1;then 
-			hdparm -C $sd | grep -iq 'standby' && echo 'standby' || smartctl $sd -a -j
-		else 
-			smartctl $sd -a -j
+if ls /dev/sd[a-z] >/dev/null 2>&1;then
+
+	for sd in `ls /dev/sd[a-z]`;do
+		chmod +s /usr/sbin/smartctl
+		#检测是否是真的机械键盘
+		sdsn=`echo $sd | awk -F '/' '{print $NF}'`
+		sdcr=/sys/block/$sdsn/queue/rotational
+		sdtype="机械硬盘$sdi"
+		
+		if [ ! -e $sdcr ];then
+			continue
+		else
+			if [ "`cat $sdcr`" -eq 0 ];then 
+				sdtype="固态硬盘$sdi"
+			fi
 		fi
-	else
-		echo '{}'
-	fi
-\`;
+		
+		#echo '$res->{sd'"$sdi"'} = `[ -b '"$sd"' ] && { cat /sys/block/'"$sdsn"'/queue/rotational | grep -q 1 && { hdparm -C '"$sd"' | grep -iq "standby" && echo "standby" || smartctl '"$sd"' -a -j; } || { smartctl '"$sd"' -a -j;} ;} || { echo "{}" ;}`;' >> $tmpf0
+
+		#[] && 型条件判断，嵌套的条件判断的非 || 后面一定要写动作，否则会穿透到上一层的非条件
+		#机械/固态硬盘输出信息逻辑,
+		#如果硬盘不存在就输出空JSON
+		#如果存在，那么判断是不是机械，如果是机械，看是不是休眠，如果没休眠和固态硬盘一样输出smart
+
+		cat >> $tmpf0 << EOF
+	\$res->{sd$sdi} = \`
+		if [ -b $sd ];then
+			if cat /sys/block/$sdsn/queue/rotational | grep -q 1;then 
+				hdparm -C $sd | grep -iq 'standby' && echo 'standby' || smartctl $sd -a -j
+			else 
+				smartctl $sd -a -j
+			fi
+		else
+			echo '{}'
+		fi
+	\`;
 EOF
 
-	cat >> $tmpf << EOF
-	{
-		  itemId: 'sd${sdi}0',
-		  colspan: 2,
-		  printBar: false,
-		  title: gettext('${sdtype}'),
-		  textField: 'sd${sdi}',
-		  renderer:function(value){
-			//return value;
-			if (value === 'standy') return '硬盘休眠中，避免唤醒，不检测SMART';
-			try{
-				let  v = JSON.parse(value);
-				//名字
-				let model = v.model_name;
-				if (! model) {
-					return '找不到硬盘，直通或已被卸载';
-				}
-				// 温度
-				let temp = "温度: " + v.temperature.current + '°C';
-				// 通电时间
-				let pot = "通电: " + v.power_on_time.hours + '时' + ',次: '+ v.power_cycle_count;
-				let log = v.nvme_smart_health_information_log;
-				// smart状态
-				let smart = 'SMART: ' + (v.smart_status.passed? '正常' : '警告！');
-				let t = model + ' | ' + temp + ' | ' + pot + ' | ' + smart;
-				return t;
-				//console.log(t);
-			}catch(e){
-				return '无法获得有效消息';
-			};
-		 }
-	},
+		cat >> $tmpf << EOF
+		{
+			  itemId: 'sd${sdi}0',
+			  colspan: 2,
+			  printBar: false,
+			  title: gettext('${sdtype}'),
+			  textField: 'sd${sdi}',
+			  renderer:function(value){
+				//return value;
+				if (value === 'standy') return '硬盘休眠中，避免唤醒，不检测SMART';
+				try{
+					let  v = JSON.parse(value);
+					//名字
+					let model = v.model_name;
+					if (! model) {
+						return '找不到硬盘，直通或已被卸载';
+					}
+					// 温度
+					let temp = "温度: " + v.temperature.current + '°C';
+					// 通电时间
+					let pot = "通电: " + v.power_on_time.hours + '时' + ',次: '+ v.power_cycle_count;
+					let log = v.nvme_smart_health_information_log;
+					// smart状态
+					let smart = 'SMART: ' + (v.smart_status.passed? '正常' : '警告！');
+					let t = model + ' | ' + temp + ' | ' + pot + ' | ' + smart;
+					return t;
+					//console.log(t);
+				}catch(e){
+					return '无法获得有效消息';
+				};
+			 }
+		},
 EOF
-	let sdi++
-done
+		let sdi++
+	done
+fi
 echo "已添加 $sdi 块SATA固态和机械硬盘"
 
+
+
 echo 开始修改nodes.pm文件
-if [ "$(sed -n "/PVE::pvecfg::version_text()/{=;p;q}" $np)" ];then #确认修改点
+if [ "$(sed -n "/PVE::pvecfg::version_text()/{=;p;q}" "$np")" ];then #确认修改点
 	#r追加文本后面必须跟回车，否则r 后面的文字都会被当成文件名，导致脚本出错
 	sed -i "/PVE::pvecfg::version_text()/{r $tmpf0
-	}" $np
-	[ $dmode -eq 1 ] && sed -n "/PVE::pvecfg::version_text()/,+5p" $np
+	}" "$np"
+	[ $dmode -eq 1 ] && sed -n "/PVE::pvecfg::version_text()/,+5p" "$np"
 else
 	echo '找不到nodes.pm文件的修改点'
 	
@@ -312,16 +322,14 @@ fi
 
 
 echo 开始修改pvemanagerlib.js文件
-if [ "$(sed -n "/pveversion/{=;p;q}" $pvejs)" ];then #确认修改点
+if [ "$(sed -n "/pveversion/{=;p;q}" "$pvejs")" ];then #确认修改点
 	#r追加文本后面必须跟回车，否则r 后面的文字都会被当成文件名，导致脚本出错
 	sed -i "/pveversion/,+3{/},/r $tmpf
-	}" $pvejs
+	}" "$pvejs"
 	
-	[ $dmode -eq 1 ] && sed -n "/pveversion/,+8p" $pvejs
-	#rm $tmpf
+	[ $dmode -eq 1 ] && sed -n "/pveversion/,+8p" "$pvejs"
 else
 	echo '找不到pvemanagerlib.js文件的修改点'
-	#rm $tmpf
 	fail
 fi
 
@@ -330,54 +338,53 @@ echo 修改页面高度
 #addRs=`awk 'END{print NR}' $tmpf0`
 addRs=`grep -c '\$res' $tmpf0`
 [ $dmode -eq 1 ] && echo 添加了 $addRs 条
-addHei=$(( 32 * addRs))
+addHei=$(( 30 * addRs))
 
 #原高度300
-if [ "$(sed -n "/widget.pveNodeStatus/{=;p;q}" $pvejs)" ]; then 
+if [ "$(sed -n "/widget.pveNodeStatus/{=;p;q}" "$pvejs")" ]; then 
 	#获取原高度
-	wph=`sed -n -E "/widget\.pveNodeStatus/,+4{/height:/s/[^0-9]+([0-9]+).*/\1/p}" $pvejs`
+	wph=`sed -n -E "/widget\.pveNodeStatus/,+4{/height:/s/[^0-9]+([0-9]+).*/\1/p}" "$pvejs"`
 	
-	sed -i -E "/widget\.pveNodeStatus/,+4{/height:/{s#[0-9]+#$(( wph + addHei))#}}" $pvejs
+	sed -i -E "/widget\.pveNodeStatus/,+4{/height:/{s#[0-9]+#$(( wph + addHei))#}}" "$pvejs"
 	
-	[ $dmode -eq 1 ] && sed -n "/widget.pveNodeStatus/,+4p" $pvejs | grep height
+	[ $dmode -eq 1 ] && sed -n "/widget.pveNodeStatus/,+4p" "$pvejs" | grep height
 else
 	echo 找不到修改高度的修改点
 	fail
 fi
 
 #原高度400
-if [ "$(sed -n "/\[logView\]/{=;p;q}" $pvejs)" ]; then 
+if [ "$(sed -n "/\[logView\]/{=;p;q}" "$pvejs")" ]; then 
 
-	lgh=`sed -n -E "/\[logView\]/,+4{/height:/s/[^0-9]+([0-9]+).*/\1/p}" $pvejs`
+	lgh=`sed -n -E "/\[logView\]/,+4{/height:/s/[^0-9]+([0-9]+).*/\1/p}" "$pvejs"`
 	
-	sed -i -E "/\[logView\]/,+4{/height:/{s#[0-9]+#$(( lgh + addHei))#}}" $pvejs
+	sed -i -E "/\[logView\]/,+4{/height:/{s#[0-9]+#$(( lgh + addHei))#}}" "$pvejs"
 	
-	[ $dmode -eq 1 ] && sed -n "/\[logView\]/,+4p" $pvejs | grep height
+	[ $dmode -eq 1 ] && sed -n "/\[logView\]/,+4p" "$pvejs" | grep height
 else
 	echo 找不到修改高度的修改点
 	fail
 fi
 
-echo 温度，频率相关修改已完成
+echo 温度，频率，硬盘信息相关修改已完成
 echo ------------------------
 echo ------------------------
 echo 开始修改proxmoxlib.js文件
 echo 去除订阅弹窗
 
-if [ "$(sed -n '/\/nodes\/localhost\/subscription/{=;p;q}' $plib)" ];then 
-	sed -i '/\/nodes\/localhost\/subscription/,+10s/Ext.Msg.show/void/' $plib 
+if [ "$(sed -n '/\/nodes\/localhost\/subscription/{=;p;q}' "$plib")" ];then 
+	sed -i '/\/nodes\/localhost\/subscription/,+10s/Ext.Msg.show/void/' "$plib" 
 	
-	[ $dmode -eq 1 ] && sed -n "/\/nodes\/localhost\/subscription/,+10p" $plib
+	[ $dmode -eq 1 ] && sed -n "/\/nodes\/localhost\/subscription/,+10p" "$plib"
 else 
 	echo 找不到修改点，放弃修改这个
 fi
 
-echo ------------------------
-echo "修改完成"
-echo "请刷新浏览器缓存：Shift+F5"
-echo "如果你看到主页面提示连接错误或者没看到温度和频率，请按：Shift+F5，刷新浏览器缓存！"
-echo "如果你对效果不满意，请给脚本加上 restore 参数运行，可以还原修改"
+echo -e "------------------------
+	修改完成
+	请刷新浏览器缓存：\033[31mShift+F5\033[0m
+	如果你看到主页面提示连接错误或者没看到温度和频率，请按：\033[31mShift+F5\033[0m，刷新浏览器缓存！
+	如果你对效果不满意，请执行：\033[31m\"$sap\" restore\033[0m 命令，可以还原修改
+"
 
 systemctl restart pveproxy
-
-
