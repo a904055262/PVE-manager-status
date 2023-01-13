@@ -14,7 +14,7 @@ np="/usr/share/perl5/PVE/API2/Nodes.pm"
 pvejs="/usr/share/pve-manager/js/pvemanagerlib.js"
 plib="/usr/share/javascript/proxmox-widget-toolkit/proxmoxlib.js"
 
-if ! sensors > /dev/null 2>&1; then
+if ! command -v sensors > /dev/null 2>&1; then
 	echo 你需要先安装lm-sensors，脚本尝试给你自动安装
 	if apt update && apt install -y lm-sensors; then 
 		echo 安装lm-sensors成功，脚本继续执行
@@ -311,7 +311,8 @@ echo "已添加 $sdi 块SATA固态和机械硬盘"
 echo 开始修改nodes.pm文件
 if [ "$(sed -n "/PVE::pvecfg::version_text()/{=;p;q}" "$np")" ];then #确认修改点
 	#r追加文本后面必须跟回车，否则r 后面的文字都会被当成文件名，导致脚本出错
-	sed -i "/PVE::pvecfg::version_text()/{r $tmpf0
+	sed -i "/PVE::pvecfg::version_text()/{
+		r $tmpf0
 	}" "$np"
 	[ $dmode -eq 1 ] && sed -n "/PVE::pvecfg::version_text()/,+5p" "$np"
 else
@@ -322,9 +323,9 @@ fi
 
 
 echo 开始修改pvemanagerlib.js文件
-if [ "$(sed -n "/pveversion/{=;p;q}" "$pvejs")" ];then #确认修改点
-	#r追加文本后面必须跟回车，否则r 后面的文字都会被当成文件名，导致脚本出错
-	sed -i "/pveversion/,+3{/},/r $tmpf
+if [ "$(sed -n "/pveversion/{=;p;q}" "$pvejs")" ];then 
+	sed -i "/pveversion/,+3{
+		/},/r $tmpf
 	}" "$pvejs"
 	
 	[ $dmode -eq 1 ] && sed -n "/pveversion/,+8p" "$pvejs"
@@ -343,7 +344,9 @@ addHei=$(( 30 * addRs))
 #原高度300
 if [ "$(sed -n "/widget.pveNodeStatus/{=;p;q}" "$pvejs")" ]; then 
 	#获取原高度
-	wph=`sed -n -E "/widget\.pveNodeStatus/,+4{/height:/s/[^0-9]+([0-9]+).*/\1/p}" "$pvejs"`
+	wph=`sed -n -E "/widget\.pveNodeStatus/,+4{
+		/height:/s/[^0-9]*([0-9]+).*/\1/p
+	}" "$pvejs"`
 	
 	sed -i -E "/widget\.pveNodeStatus/,+4{/height:/{s#[0-9]+#$(( wph + addHei))#}}" "$pvejs"
 	
@@ -356,7 +359,9 @@ fi
 #原高度400
 if [ "$(sed -n "/\[logView\]/{=;p;q}" "$pvejs")" ]; then 
 
-	lgh=`sed -n -E "/\[logView\]/,+4{/height:/s/[^0-9]+([0-9]+).*/\1/p}" "$pvejs"`
+	lgh=`sed -n -E "/\[logView\]/,+4{
+		/height:/s/[^0-9]*([0-9]+).*/\1/p
+	}" "$pvejs"`
 	
 	sed -i -E "/\[logView\]/,+4{/height:/{s#[0-9]+#$(( lgh + addHei))#}}" "$pvejs"
 	
