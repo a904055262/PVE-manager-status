@@ -270,7 +270,6 @@ EOF
 			  textField: 'sd${sdi}',
 			  renderer:function(value){
 				//return value;
-				if (value === 'standy') return '硬盘休眠中，避免唤醒，不检测SMART';
 				try{
 					let  v = JSON.parse(value);
 					//名字
