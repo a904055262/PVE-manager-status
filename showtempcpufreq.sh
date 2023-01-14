@@ -246,22 +246,15 @@ if ls /dev/sd[a-z] >/dev/null 2>&1;then
 				sdtype="固态硬盘$sdi"
 			fi
 		fi
-		
-		#echo '$res->{sd'"$sdi"'} = `[ -b '"$sd"' ] && { cat /sys/block/'"$sdsn"'/queue/rotational | grep -q 1 && { hdparm -C '"$sd"' | grep -iq "standby" && echo "standby" || smartctl '"$sd"' -a -j; } || { smartctl '"$sd"' -a -j;} ;} || { echo "{}" ;}`;' >> $tmpf0
 
 		#[] && 型条件判断，嵌套的条件判断的非 || 后面一定要写动作，否则会穿透到上一层的非条件
 		#机械/固态硬盘输出信息逻辑,
 		#如果硬盘不存在就输出空JSON
-		#如果存在，那么判断是不是机械，如果是机械，看是不是休眠，如果没休眠和固态硬盘一样输出smart
 
 		cat >> $tmpf0 << EOF
 	\$res->{sd$sdi} = \`
 		if [ -b $sd ];then
-			if cat /sys/block/$sdsn/queue/rotational | grep -q 1;then 
-				hdparm -C $sd | grep -iq 'standby' && echo 'standby' || smartctl $sd -a -j
-			else 
-				smartctl $sd -a -j
-			fi
+			smartctl $sd -a -j
 		else
 			echo '{}'
 		fi
