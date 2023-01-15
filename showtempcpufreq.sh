@@ -364,38 +364,40 @@ if [ "$(sed -n '/widget.pveNodeStatus/,+4{
 		}
 	}' "$pvejs"
 
+	#修改右边栏高度，让它和左边一样高，双栏的时候否则导致浮动出问题
+	#原高度325
+	echo 修改右栏高度和左栏一致，解决浮动错位
+	if [ "$(sed -n '/nodeStatus:\s*nodeStatus/,+10{
+			/minHeight:/{=;p;q}
+		}' "$pvejs")" ]; then 
+		#获取原高度
+		nph=$(sed -n -E '/nodeStatus:\s*nodeStatus/,+10{
+			/minHeight:/{s/[^0-9]*([0-9]+).*/\1/p;q}
+		}' "$pvejs")
+		
+		sed -i -E "/nodeStatus:\s*nodeStatus/,+10{
+			/minHeight:/{
+				s#[0-9]+#$(( nph + addHei - (nph - wph) ))#
+			}
+		}" "$pvejs"
+		
+		[ $dmode -eq 1 ] && sed -n '/nodeStatus:\s*nodeStatus/,+10{
+			/minHeight/{
+				p;q
+			}
+		}' "$pvejs"
+
+	else
+		echo 右边栏高度找不到修改点，修改失败
+		
+	fi
+
 else
 	echo 找不到修改高度的修改点
 	fail
 fi
 
-#修改右边栏高度，让它和左边一样高，双栏的时候否则导致浮动出问题
-#原高度325
-echo 修改右栏高度和左栏一致，解决浮动错位
-if [ "$(sed -n '/nodeStatus:\s*nodeStatus/,+10{
-		/minHeight:/{=;p;q}
-	}' "$pvejs")" ]; then 
-	#获取原高度
-	nph=$(sed -n -E '/nodeStatus:\s*nodeStatus/,+10{
-		/minHeight:/{s/[^0-9]*([0-9]+).*/\1/p;q}
-	}' "$pvejs")
-	
-	sed -i -E "/nodeStatus:\s*nodeStatus/,+10{
-		/minHeight:/{
-			s#[0-9]+#$(( nph + addHei - 25))#
-		}
-	}" "$pvejs"
-	
-	[ $dmode -eq 1 ] && sed -n '/nodeStatus:\s*nodeStatus/,+10{
-		/minHeight/{
-			p;q
-		}
-	}' "$pvejs"
 
-else
-	echo 找不到修改高度的修改点
-	fail
-fi
 
 
 echo 温度，频率，硬盘信息相关修改已完成
