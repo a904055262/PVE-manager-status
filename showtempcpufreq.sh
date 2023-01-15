@@ -1,7 +1,14 @@
 #!/usr/bin/env bash
 
+#添加硬盘信息的控制变量，如果你想不显示硬盘信息就设置为0
+#NVME硬盘
+sNVMEInfo=1
+#固态和机械硬盘
+sODisksInfo=1
 #debug，显示修改后的内容，用于调试
 dmode=0
+
+
 
 #脚本路径
 sdir=$(cd $(dirname ${BASH_SOURCE[0]}); pwd)
@@ -171,10 +178,9 @@ $res->{cpure} = `
 EOF
 
 #检测nvme硬盘
-echo 检测中的系统NVME硬盘
+echo 检测系统中的NVME硬盘
 nvi=0
-if ls /dev/nvme[0-9] >/dev/null 2>&1;then 
-
+if [ $sNVMEInfo -eq 1 ] && ls /dev/nvme[0-9] >/dev/null 2>&1;then
 	for nvme in `ls /dev/nvme[0-9]`; do
 		chmod +s /usr/sbin/smartctl
 		#echo '$res->{nvme'"$nvi"'} = `smartctl '"$nvme"' -a -j`;' >> $tmpf0
@@ -226,12 +232,11 @@ fi
 echo "已添加 $nvi 块NVME硬盘"
 
 
+
 #检测机械键盘
-echo 检测中的SATA固态和机械硬盘
+echo 检测系统中的SATA固态和机械硬盘
 sdi=0
-
-if ls /dev/sd[a-z] >/dev/null 2>&1;then
-
+if [ $sODisksInfo -eq 1 ] && ls /dev/sd[a-z] >/dev/null 2>&1;then
 	for sd in `ls /dev/sd[a-z]`;do
 		chmod +s /usr/sbin/smartctl
 		#检测是否是真的机械键盘
@@ -315,7 +320,10 @@ fi
 
 
 echo 开始修改pvemanagerlib.js文件
-if [ "$(sed -n "/pveversion/{=;p;q}" "$pvejs")" ];then 
+if [ "$(sed -n '/pveversion/,+3{
+		/},/{=;p;q}
+	}' "$pvejs")" ];then 
+	
 	sed -i "/pveversion/,+3{
 		/},/r $tmpf
 	}" "$pvejs"
@@ -335,7 +343,10 @@ addHei=$(( 28 * addRs))
 
 #原高度300
 echo 修改左栏高度
-if [ "$(sed -n "/widget.pveNodeStatus/{=;p;q}" "$pvejs")" ]; then 
+if [ "$(sed -n '/widget.pveNodeStatus/,+4{
+		/height:/{=;p;q}
+	}' "$pvejs")" ]; then 
+	
 	#获取原高度
 	wph=$(sed -n -E "/widget\.pveNodeStatus/,+4{
 		/height:/{s/[^0-9]*([0-9]+).*/\1/p;q}
@@ -361,7 +372,9 @@ fi
 #修改右边栏高度，让它和左边一样高，双栏的时候否则导致浮动出问题
 #原高度325
 echo 修改右栏高度和左栏一致，解决浮动错位
-if [ "$(sed -n "/nodeStatus:\s*nodeStatus/{=;p;q}" "$pvejs")" ]; then 
+if [ "$(sed -n '/nodeStatus:\s*nodeStatus/,+10{
+		/minHeight:/{=;p;q}
+	}' "$pvejs")" ]; then 
 	#获取原高度
 	nph=$(sed -n -E '/nodeStatus:\s*nodeStatus/,+10{
 		/minHeight:/{s/[^0-9]*([0-9]+).*/\1/p;q}
