@@ -328,40 +328,62 @@ fi
 
 echo 修改页面高度
 #统计加了几条
-#addRs=`awk 'END{print NR}' $tmpf0`
 addRs=`grep -c '\$res' $tmpf0`
-[ $dmode -eq 1 ] && echo 添加了 $addRs 条
-addHei=$(( 30 * addRs))
+addHei=$(( 28 * addRs))
+[ $dmode -eq 1 ] && echo "添加了$addRs条内容,增加高度为:${addHei}px"
+
 
 #原高度300
+echo 修改左栏高度
 if [ "$(sed -n "/widget.pveNodeStatus/{=;p;q}" "$pvejs")" ]; then 
 	#获取原高度
-	wph=`sed -n -E "/widget\.pveNodeStatus/,+4{
-		/height:/s/[^0-9]*([0-9]+).*/\1/p
-	}" "$pvejs"`
+	wph=$(sed -n -E "/widget\.pveNodeStatus/,+4{
+		/height:/{s/[^0-9]*([0-9]+).*/\1/p;q}
+	}" "$pvejs")
 	
-	sed -i -E "/widget\.pveNodeStatus/,+4{/height:/{s#[0-9]+#$(( wph + addHei))#}}" "$pvejs"
+	sed -i -E "/widget\.pveNodeStatus/,+4{
+		/height:/{
+			s#[0-9]+#$(( wph + addHei))#
+		}
+	}" "$pvejs"
 	
-	[ $dmode -eq 1 ] && sed -n "/widget.pveNodeStatus/,+4p" "$pvejs" | grep height
+	[ $dmode -eq 1 ] && sed -n '/widget.pveNodeStatus/,+4{
+		/height/{
+			p;q
+		}
+	}' "$pvejs"
+
 else
 	echo 找不到修改高度的修改点
 	fail
 fi
 
-#原高度400
-if [ "$(sed -n "/\[logView\]/{=;p;q}" "$pvejs")" ]; then 
+#修改右边栏高度，让它和左边一样高，双栏的时候否则导致浮动出问题
+#原高度325
+echo 修改右栏高度和左栏一致，解决浮动错位
+if [ "$(sed -n "/nodeStatus:\s*nodeStatus/{=;p;q}" "$pvejs")" ]; then 
+	#获取原高度
+	nph=$(sed -n -E '/nodeStatus:\s*nodeStatus/,+10{
+		/minHeight:/{s/[^0-9]*([0-9]+).*/\1/p;q}
+	}' "$pvejs")
+	
+	sed -i -E "/nodeStatus:\s*nodeStatus/,+10{
+		/minHeight:/{
+			s#[0-9]+#$(( nph + addHei - 25))#
+		}
+	}" "$pvejs"
+	
+	[ $dmode -eq 1 ] && sed -n '/nodeStatus:\s*nodeStatus/,+10{
+		/minHeight/{
+			p;q
+		}
+	}' "$pvejs"
 
-	lgh=`sed -n -E "/\[logView\]/,+4{
-		/height:/s/[^0-9]*([0-9]+).*/\1/p
-	}" "$pvejs"`
-	
-	sed -i -E "/\[logView\]/,+4{/height:/{s#[0-9]+#$(( lgh + addHei))#}}" "$pvejs"
-	
-	[ $dmode -eq 1 ] && sed -n "/\[logView\]/,+4p" "$pvejs" | grep height
 else
 	echo 找不到修改高度的修改点
 	fail
 fi
+
 
 echo 温度，频率，硬盘信息相关修改已完成
 echo ------------------------
