@@ -104,33 +104,30 @@ cat > $tmpf << 'EOF'
 		itemId: 'thermal',
 		colspan: 2,
 		printBar: false,
-		title: gettext('温度'),
+		title: gettext('温度(°C)'),
 		textField: 'thermalstate',
 		renderer:function(value){
 			//value进来的值是有换行符的
 			
 			let b = value.trim().split(/\)\s+(?=[A-z]+-)/).sort();
 			let c = b.map(function (v){
-				let name = v.match(/^[^-]+/)[0].toUpperCase() + ': ';
+				let name = v.match(/^[^-]+/)[0].toUpperCase();
 				
-				let temp = v.match(/(?<=:\s+\+)[\d\.]+/g).map( v => v + '°C');
+				let temp = v.match(/(?<=:\s+\+)[\d\.]+/g).map( v => Number.parseInt(v));
 				
 				if (/coretemp/i.test(name)) {
-					name = 'CPU温度: ';
-					temp = temp[0] + '(' +   temp.slice(1).join(', ') + ')';
-				} else if (/acpitz/i.test(name)) {
-					name = '主板: '
-					temp = temp[0];
-				} else { 
+					name = 'CPU';
+					temp = temp[0] + ' ( ' +   temp.slice(1).join(' | ') + ' )';
+				} else {
 					temp = temp[0];
 				}
 				
-				return name + temp;
+				return name + ': ' + temp;
 			});
 			//排序，把cpu温度放最前
 			//console.log(c);
 			
-			c.unshift(c.splice(c.findIndex(v => /CPU温度/i.test(v)), 1));
+			c.unshift(c.splice(c.findIndex(v => /CPU/i.test(v)), 1));
 			//console.log(c)
 			c = c.join(' | ');
 			// console.log(c);
@@ -141,21 +138,16 @@ cat > $tmpf << 'EOF'
 		  itemId: 'cpumhz',
 		  colspan: 2,
 		  printBar: false,
-		  title: gettext('CPU频率'),
-		  textField: 'cpure',
+		  title: gettext('CPU频率(GHz)'),
+		  textField: 'cpuFreq',
 		  renderer:function(v){
 			//return v;
 			let m = v.match(/(?<=cpu[^\d]+)\d+/ig);
-			let i=0
-			let m2 = m.map(e =>{
-				let t = `${i}: ${e}`;
-				i++
-				return t;
-			});
+			let m2 = m.map( e => ( e / 1000 ).toFixed(1) );
 			m2 = m2.join(' | ');
 			let gov = v.match(/(?<=gov:\s*).+/i)[0].toUpperCase();
-			let min = v.match(/(?<=min[^\d+]+)\d+/i)[0]/1000;
-			let max = v.match(/(?<=max[^\d+]+)\d+/i)[0]/1000;
+			let min = v.match(/(?<=min[^\d+]+)\d+/i)[0]/1000000;
+			let max = v.match(/(?<=max[^\d+]+)\d+/i)[0]/1000000;
 			return `${m2} | MAX: ${max} | MIN: ${min} | 调速器: ${gov}`
 		 }
 	},
@@ -166,7 +158,7 @@ tmpf0=.dfadfasdf.tmp
 
 cat > $tmpf0 << 'EOF'
 $res->{thermalstate} = `sensors`;
-$res->{cpure} = `
+$res->{cpuFreq} = `
 	cat /proc/cpuinfo | grep -i  "cpu mhz"
 	echo -n 'gov:'
 	cat /sys/devices/system/cpu/cpufreq/policy0/scaling_governor
