@@ -109,7 +109,7 @@ cat > $tmpf << 'EOF'
 		renderer:function(value){
 			//value进来的值是有换行符的
 			
-			let b = value.trim().split(/\)\s+(?=[A-z]+-)/).sort();
+			let b = value.trim().split(/\s+(?=^\w+-)/m).sort();
 			let c = b.map(function (v){
 				let name = v.match(/^[^-]+/)[0].toUpperCase();
 				
@@ -124,13 +124,16 @@ cat > $tmpf << 'EOF'
 				
 				return name + ': ' + temp;
 			});
-			//排序，把cpu温度放最前
-			//console.log(c);
 			
-			c.unshift(c.splice(c.findIndex(v => /CPU/i.test(v)), 1));
-			//console.log(c)
+			//console.log(c);
+			//排序，把cpu温度放最前
+			let cpuIdx = c.findIndex(v => /CPU/i.test(v) );
+			if (cpuIdx !== -1) {
+				c.unshift(c.splice(cpuIdx, 1)[0]);
+			}
+			
+			// console.log(c)
 			c = c.join(' | ');
-			// console.log(c);
 			return c;
 		 }
 	},
@@ -146,8 +149,8 @@ cat > $tmpf << 'EOF'
 			let m2 = m.map( e => ( e / 1000 ).toFixed(1) );
 			m2 = m2.join(' | ');
 			let gov = v.match(/(?<=gov:\s*).+/i)[0].toUpperCase();
-			let min = v.match(/(?<=min[^\d+]+)\d+/i)[0]/1000000;
-			let max = v.match(/(?<=max[^\d+]+)\d+/i)[0]/1000000;
+			let min = (v.match(/(?<=min[^\d+]+)\d+/i)[0]/1000000).toFixed(1);
+			let max = (v.match(/(?<=max[^\d+]+)\d+/i)[0]/1000000).toFixed(1);
 			return `${m2} | MAX: ${max} | MIN: ${min} | 调速器: ${gov}`
 		 }
 	},
