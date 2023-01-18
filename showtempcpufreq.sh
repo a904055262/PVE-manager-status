@@ -113,7 +113,7 @@ cat > $tmpf << 'EOF'
 			let c = b.map(function (v){
 				let name = v.match(/^[^-]+/)[0].toUpperCase();
 				
-				let temp = v.match(/(?<=:\s+\+)[\d\.]+/g).map( v => Number.parseInt(v));
+				let temp = v.match(/(?<=:\s+\+)\d+/g);
 				
 				if (/coretemp/i.test(name)) {
 					name = 'CPU';
@@ -122,13 +122,16 @@ cat > $tmpf << 'EOF'
 					temp = temp[0];
 				}
 				
-				return name + ': ' + temp;
+				let crit = v.match(/(?<=\bcrit\b[^+]+\+)\d+/);
+				let high = v.match(/(?<=\bhigh\b[^+]+\+)\d+/);
+				
+				return name + ': ' + temp + ( high? ` ,high: ${high[0]}` : '') + ( crit? ` ,crit: ${crit[0]}` : '');
 			});
 			
 			//console.log(c);
 			//排序，把cpu温度放最前
 			let cpuIdx = c.findIndex(v => /CPU/i.test(v) );
-			if (cpuIdx !== -1) {
+			if (cpuIdx > 0) {
 				c.unshift(c.splice(cpuIdx, 1)[0]);
 			}
 			
@@ -160,7 +163,7 @@ EOF
 tmpf0=.dfadfasdf.tmp
 
 cat > $tmpf0 << 'EOF'
-$res->{thermalstate} = `sensors`;
+$res->{thermalstate} = `sensors -A`;
 $res->{cpuFreq} = `
 	cat /proc/cpuinfo | grep -i  "cpu mhz"
 	echo -n 'gov:'
@@ -193,7 +196,7 @@ EOF
 			  title: gettext('NVME硬盘${nvi}'),
 			  textField: 'nvme${nvi}',
 			  renderer:function(value){
-					//return value;
+				//return value;
 				try{
 					let  v = JSON.parse(value);
 					//名字
