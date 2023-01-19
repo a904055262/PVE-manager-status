@@ -96,6 +96,23 @@ esac
 echo 备份源文件
 backup
 
+
+tmpf0=.dfadfasdf.tmp
+
+cat > $tmpf0 << 'EOF'
+$res->{thermalstate} = `sensors -A`;
+$res->{cpuFreq} = `
+	cat /proc/cpuinfo | grep -i  "cpu mhz"
+	echo -n 'gov:'
+	cat /sys/devices/system/cpu/cpufreq/policy0/scaling_governor
+	echo -n 'min:'
+	cat /sys/devices/system/cpu/cpufreq/policy0/cpuinfo_min_freq
+	echo -n 'max:'
+	cat /sys/devices/system/cpu/cpufreq/policy0/cpuinfo_max_freq
+`;
+EOF
+
+
 tmpf=.sdfadfasdf.tmp
 
 cat > $tmpf << 'EOF'
@@ -159,21 +176,6 @@ cat > $tmpf << 'EOF'
 EOF
 
 
-tmpf0=.dfadfasdf.tmp
-
-cat > $tmpf0 << 'EOF'
-$res->{thermalstate} = `sensors -A`;
-$res->{cpuFreq} = `
-	cat /proc/cpuinfo | grep -i  "cpu mhz"
-	echo -n 'gov:'
-	cat /sys/devices/system/cpu/cpufreq/policy0/scaling_governor
-	echo -n 'min:'
-	cat /sys/devices/system/cpu/cpufreq/policy0/cpuinfo_min_freq
-	echo -n 'max:'
-	cat /sys/devices/system/cpu/cpufreq/policy0/cpuinfo_max_freq
-`;
-EOF
-
 #检测nvme硬盘
 echo 检测系统中的NVME硬盘
 nvi=0
@@ -204,18 +206,40 @@ EOF
 						return '找不到硬盘，直通或已被卸载';
 					}
 					// 温度
-					let temp = "温度: " + v.temperature.current + '°C';
-					// 通电时间
-					let pot = "通电: " + v.power_on_time.hours + '时' + ',次: '+ v.power_cycle_count;
-					let log = v.nvme_smart_health_information_log;
-					let read = (log.data_units_read / 1956882).toFixed(1) + 'T';
-					let write = (log.data_units_written / 1956882).toFixed(1) + 'T'
+					let temp = v.temperature?.current;
+					temp = ( temp !== undefined ) ? " | 温度: " + temp + '°C' : '' ;
 					
+					// 通电时间
+					let pot = v.power_on_time?.hours;
+					let poth = v.power_cycle_count;
+					
+					pot = ( pot !== undefined ) ? (" | 通电: " + pot + '时' + ( poth ? ',次: '+ poth : '' )) : '';
+					
+					// 读写
+					let log = v.nvme_smart_health_information_log;
+					let rw=''
+					if (log) {
+						let read = log.data_units_read;
+						let write = log.data_units_written;
+						read = read ? (log.data_units_read / 1956882).toFixed(1) + 'T' : '';
+						write = write ? (log.data_units_written / 1956882).toFixed(1) + 'T' : '';
+						if (read && write) {
+							rw = ' | 读/写: ' + read + '/' + write;
+						}
+					}
+
 					// smart状态
-					let smart = 'SMART: ' + (v.smart_status.passed? '正常' : '警告！');
-					let t = model + ' | ' + temp + ' | ' + pot + ' | ' + '读/写: ' + read + '/' + write + ' | ' + smart;
-					return t;
+					let smart = v.smart_status?.passed;
+					if (smart === undefined ) {
+						smart = '';
+					} else {
+						smart = ' | SMART: ' + (smart ? '正常' : '警告!');
+					}
+					
+					
+					let t = model + temp  + pot + rw + smart;
 					//console.log(t);
+					return t;
 				}catch(e){
 					return '无法获得有效消息';
 				};
@@ -280,15 +304,27 @@ EOF
 						return '找不到硬盘，直通或已被卸载';
 					}
 					// 温度
-					let temp = "温度: " + v.temperature.current + '°C';
+					let temp = v.temperature?.current;
+					temp = ( temp !== undefined ) ? " | 温度: " + temp + '°C' : '' ;
+					
 					// 通电时间
-					let pot = "通电: " + v.power_on_time.hours + '时' + ',次: '+ v.power_cycle_count;
-					let log = v.nvme_smart_health_information_log;
+					let pot = v.power_on_time?.hours;
+					let poth = v.power_cycle_count;
+					
+					pot = ( pot !== undefined ) ? (" | 通电: " + pot + '时' + ( poth ? ',次: '+ poth : '' )) : '';
+					
 					// smart状态
-					let smart = 'SMART: ' + (v.smart_status.passed? '正常' : '警告！');
-					let t = model + ' | ' + temp + ' | ' + pot + ' | ' + smart;
-					return t;
+					let smart = v.smart_status?.passed;
+					if (smart === undefined ) {
+						smart = '';
+					} else {
+						smart = ' | SMART: ' + (smart ? '正常' : '警告!');
+					}
+					
+					
+					let t = model + temp  + pot + smart;
 					//console.log(t);
+					return t;
 				}catch(e){
 					return '无法获得有效消息';
 				};
