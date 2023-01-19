@@ -10,6 +10,7 @@ dmode=0
 
 #脚本路径
 sdir=$(cd $(dirname ${BASH_SOURCE[0]}); pwd)
+cd "$sdir"
 sname=`awk -F '/' '{print $NF}' <<< ${BASH_SOURCE[0]}`
 sap=$sdir/$sname
 echo "脚本路径：$sap"
