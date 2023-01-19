@@ -8,8 +8,6 @@ sODisksInfo=1
 #debug，显示修改后的内容，用于调试
 dmode=0
 
-
-
 #脚本路径
 sdir=$(cd $(dirname ${BASH_SOURCE[0]}); pwd)
 sname=`awk -F '/' '{print $NF}' <<< ${BASH_SOURCE[0]}`
