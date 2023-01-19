@@ -1,6 +1,5 @@
 #!/usr/bin/env bash
 
-
 #添加硬盘信息的控制变量，如果你想不显示硬盘信息就设置为0
 #NVME硬盘
 sNVMEInfo=1
