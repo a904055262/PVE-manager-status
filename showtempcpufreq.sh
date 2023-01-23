@@ -130,7 +130,7 @@ cat > $tmpf << 'EOF'
 			let c = b.map(function (v){
 				let name = v.match(/^[^-]+/)[0].toUpperCase();
 				
-				let temp = v.match(/(?<=:\s+\+)\d+/g);
+				let temp = v.match(/(?<=:\s+\+?)-?\d+/g);
 				
 				if (/coretemp/i.test(name)) {
 					name = 'CPU';
