@@ -441,7 +441,12 @@ echo 开始修改proxmoxlib.js文件
 echo 去除订阅弹窗
 
 if [ "$(sed -n '/\/nodes\/localhost\/subscription/{=;p;q}' "$plib")" ];then 
-	sed -i '/\/nodes\/localhost\/subscription/,+10s/Ext.Msg.show/void/' "$plib" 
+	sed -i '/\/nodes\/localhost\/subscription/,+10{
+		/res === null/{
+			N
+			s/(.*)/(false)/
+		}
+	}' "$plib" 
 	
 	[ $dmode -eq 1 ] && sed -n "/\/nodes\/localhost\/subscription/,+10p" "$plib"
 else 
