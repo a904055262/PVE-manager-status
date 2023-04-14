@@ -140,9 +140,9 @@ cat > $tmpf << 'EOF'
 				}
 				
 				let crit = v.match(/(?<=\bcrit\b[^+]+\+)\d+/);
-				let high = v.match(/(?<=\bhigh\b[^+]+\+)\d+/);
 				
-				return name + ': ' + temp + ( high? ` ,high: ${high[0]}` : '') + ( crit? ` ,crit: ${crit[0]}` : '');
+				
+				return name + ': ' + temp + ( crit? ` ,crit: ${crit[0]}` : '');
 			});
 			
 			//console.log(c);
@@ -195,7 +195,7 @@ EOF
 			  itemId: 'nvme${nvi}0',
 			  colspan: 2,
 			  printBar: false,
-			  title: gettext('NVME硬盘${nvi}'),
+			  title: gettext('NVME${nvi}'),
 			  textField: 'nvme${nvi}',
 			  renderer:function(value){
 				//return value;
@@ -208,7 +208,7 @@ EOF
 					}
 					// 温度
 					let temp = v.temperature?.current;
-					temp = ( temp !== undefined ) ? " | 温度: " + temp + '°C' : '' ;
+					temp = ( temp !== undefined ) ? " | " + temp + '°C' : '' ;
 					
 					// 通电时间
 					let pot = v.power_on_time?.hours;
@@ -219,13 +219,22 @@ EOF
 					// 读写
 					let log = v.nvme_smart_health_information_log;
 					let rw=''
+					let health=''
 					if (log) {
 						let read = log.data_units_read;
 						let write = log.data_units_written;
 						read = read ? (log.data_units_read / 1956882).toFixed(1) + 'T' : '';
 						write = write ? (log.data_units_written / 1956882).toFixed(1) + 'T' : '';
 						if (read && write) {
-							rw = ' | 读/写: ' + read + '/' + write;
+							rw = ' | R/W: ' + read + '/' + write;
+						}
+						let pu = log.percentage_used;
+						let me = log.media_errors;
+						if ( pu !== undefined ) {
+							health = ' | 健康: ' + ( 100 - pu ) + '%'
+							if ( me !== undefined ) {
+								health += ',0E: ' + me
+							}
 						}
 					}
 
@@ -238,7 +247,7 @@ EOF
 					}
 					
 					
-					let t = model + temp  + pot + rw + smart;
+					let t = model  + temp + health + pot + rw + smart;
 					//console.log(t);
 					return t;
 				}catch(e){
