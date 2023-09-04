@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 
-# version: 2023.9.4
+# version: 2023.9.5
 #添加硬盘信息的控制变量，如果你想不显示硬盘信息就设置为false
 #NVME硬盘
 sNVMEInfo=true
