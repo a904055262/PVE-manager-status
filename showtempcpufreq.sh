@@ -22,16 +22,16 @@ np=/usr/share/perl5/PVE/API2/Nodes.pm
 pvejs=/usr/share/pve-manager/js/pvemanagerlib.js
 plibjs=/usr/share/javascript/proxmox-widget-toolkit/proxmoxlib.js
 
-if ! command -v sensors > /dev/null 2>&1; then
-	echo 你需要先安装lm-sensors，脚本尝试给你自动安装
-	if apt update && apt install -y lm-sensors; then 
-		echo 安装lm-sensors成功，脚本继续执行
+if ! command -v sensors > /dev/null || ! command -v turbostat > /dev/null ; then
+	echo 你需要先安装 lm-sensors 和 linux-cpupower，脚本尝试给你自动安装
+	if apt update && apt install -y lm-sensors linux-cpupower; then 
+		echo 安装成功，脚本继续执行
 	else
-		echo 脚本自动安装lm-sensors失败
-		echo -e "请使用蓝色命令：\033[34mapt update && apt install -y lm-sensors\033[0m 手动安装后重新运行本脚本"
+		echo 脚本自动安装所需依赖失败
+		echo -e "请使用蓝色命令：\033[34mapt update && apt install -y lm-sensors linux-cpupower\033[0m 手动安装后重新运行本脚本"
 		echo 脚本退出
 		exit 1
-  fi
+	fi
 fi
 
 #获取版本号
@@ -99,6 +99,7 @@ backup
 
 contentfornp=/tmp/.contentfornp.tmp
 
+chmod +s /usr/sbin/turbostat
 cat > $contentfornp << 'EOF'
 $res->{thermalstate} = `sensors -A`;
 $res->{cpuFreq} = `
@@ -109,8 +110,11 @@ $res->{cpuFreq} = `
 	cat /sys/devices/system/cpu/cpufreq/policy0/cpuinfo_min_freq
 	echo -n 'max:'
 	cat /sys/devices/system/cpu/cpufreq/policy0/cpuinfo_max_freq
+	echo -n 'pkgwatt:'
+	turbostat --quiet --cpu package --show "PkgWatt" -S sleep 0 2>&1| tail -n1
 `;
 EOF
+
 
 
 contentforpvejs=/tmp/.contentforpvejs.tmp
@@ -170,13 +174,16 @@ cat > $contentforpvejs << 'EOF'
 		  textField: 'cpuFreq',
 		  renderer:function(v){
 			//return v;
+			console.log(v)
 			let m = v.match(/(?<=cpu[^\d]+)\d+/ig);
 			let m2 = m.map( e => ( e / 1000 ).toFixed(1) );
 			m2 = m2.join(' | ');
-			let gov = v.match(/(?<=gov:\s*).+/i)[0].toUpperCase();
-			let min = (v.match(/(?<=min[^\d+]+)\d+/i)[0]/1000000).toFixed(1);
-			let max = (v.match(/(?<=max[^\d+]+)\d+/i)[0]/1000000).toFixed(1);
-			return `${m2} | MAX: ${max} | MIN: ${min} | 调速器: ${gov}`
+			let gov = v.match(/(?<=gov:).+/i)[0].toUpperCase();
+			let min = (v.match(/(?<=min:)\d+/i)[0]/1000000).toFixed(1);
+			let max = (v.match(/(?<=max:)\d+/i)[0]/1000000).toFixed(1);
+			let watt= v.match(/(?<=pkgwatt:)[\d.]+/i);
+			watt = watt? " | 功耗: " + (watt[0]/1).toFixed(1) + 'W' : '';
+			return `${m2}${watt} | MAX: ${max} | MIN: ${min} | 调速器: ${gov}`
 		 }
 	},
 EOF
