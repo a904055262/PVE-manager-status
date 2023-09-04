@@ -38,12 +38,6 @@ fi
 pvever=$(pveversion | awk -F"/" '{print $2}')
 echo "你的PVE版本号：$pvever"
 
-backup() {
-	[ ! -e $np.$pvever.bak ]     && cp $np $np.$pvever.bak
-	[ ! -e $pvejs.$pvever.bak ]  && cp $pvejs $pvejs.$pvever.bak
-	[ ! -e $plibjs.$pvever.bak ] && cp $plibjs $plibjs.$pvever.bak
-}
-
 restore() {
 	[ -e $np.$pvever.bak ]     && mv $np.$pvever.bak $np
 	[ -e $pvejs.$pvever.bak ]  && mv $pvejs.$pvever.bak $pvejs
@@ -60,7 +54,6 @@ fail() {
 #还原修改
 case $1 in 
 	restore)
-
 		restore
 		echo 已还原修改
 		
@@ -83,24 +76,26 @@ case $1 in
 esac
 
 #检测是否已经修改过
-[[ -e $np.$pvever.bak && -e $pvejs.$pvever.bak && -e $plibjs.$pvever.bak ]] && {
+[ $(grep 'modbyshowtempfreq' $np $pvejs $plibjs | wc -l) -eq 3 ]  && {
 	echo -e "
 已经修改过，请勿重复修改
 如果没有生效，或者页面一直转圈圈
 请使用 \033[31mShift+F5\033[0m 刷新浏览器缓存
 如果一直异常，请执行：\033[31m\"$sap\" restore\033[0m 命令，可以还原修改
+如果想强制重新修改，请执行：\033[31m\"$sap\" remod\033[0m 命令，可以还原修改
 "
 	exit 1
 }
-
-echo 备份源文件
-backup
 
 
 contentfornp=/tmp/.contentfornp.tmp
 
 chmod +s /usr/sbin/turbostat
+
 cat > $contentfornp << 'EOF'
+
+#modbyshowtempfreq
+
 $res->{thermalstate} = `sensors -A`;
 $res->{cpuFreq} = `
 	cat /proc/cpuinfo | grep -i  "cpu mhz"
@@ -112,6 +107,7 @@ $res->{cpuFreq} = `
 	cat /sys/devices/system/cpu/cpufreq/policy0/cpuinfo_max_freq
 	echo -n 'pkgwatt:'
 	turbostat --quiet --cpu package --show "PkgWatt" -S sleep 0 2>&1| tail -n1
+
 `;
 EOF
 
@@ -120,6 +116,7 @@ EOF
 contentforpvejs=/tmp/.contentforpvejs.tmp
 
 cat > $contentforpvejs << 'EOF'
+//modbyshowtempfreq
 	{
 		itemId: 'thermal',
 		colspan: 2,
@@ -358,100 +355,110 @@ fi
 echo "已添加 $sdi 块SATA固态和机械硬盘"
 
 
-
-echo 开始修改nodes.pm文件
-if [ "$(sed -n "/PVE::pvecfg::version_text()/{=;p;q}" "$np")" ];then #确认修改点
-	#r追加文本后面必须跟回车，否则r 后面的文字都会被当成文件名，导致脚本出错
-	sed -i "/PVE::pvecfg::version_text()/{
-		r $contentfornp
-	}" "$np"
-	$dmode && sed -n "/PVE::pvecfg::version_text()/,+5p" "$np"
-else
-	echo '找不到nodes.pm文件的修改点'
+if ! grep -q 'modbyshowtempfreq' $np ;then
+	[ ! -e $np.$pvever.bak ] && cp $np $np.$pvever.bak
 	
-	fail
+	echo 开始修改nodes.pm文件
+	if [ "$(sed -n "/PVE::pvecfg::version_text()/{=;p;q}" "$np")" ];then #确认修改点
+		#r追加文本后面必须跟回车，否则r 后面的文字都会被当成文件名，导致脚本出错
+		sed -i "/PVE::pvecfg::version_text()/{
+			r $contentfornp
+		}" $np
+		$dmode && sed -n "/PVE::pvecfg::version_text()/,+5p" $np
+	else
+		echo '找不到nodes.pm文件的修改点'
+		
+		fail
+	fi
+else
+	echo 已经修改过
 fi
 
-
-echo 开始修改pvemanagerlib.js文件
-if [ "$(sed -n '/pveversion/,+3{
-		/},/{=;p;q}
-	}' "$pvejs")" ];then 
+if ! grep -q 'modbyshowtempfreq' $pvejs ;then
+	[ ! -e $pvejs.$pvever.bak ]  && cp $pvejs $pvejs.$pvever.bak
 	
-	sed -i "/pveversion/,+3{
-		/},/r $contentforpvejs
-	}" "$pvejs"
-	
-	$dmode && sed -n "/pveversion/,+8p" "$pvejs"
-else
-	echo '找不到pvemanagerlib.js文件的修改点'
-	fail
-fi
-
-echo 修改页面高度
-#统计加了几条
-addRs=$(grep -c '\$res' $contentfornp)
-addHei=$(( 28 * addRs))
-$dmode && echo "添加了$addRs条内容,增加高度为:${addHei}px"
+	echo 开始修改pvemanagerlib.js文件
+	if [ "$(sed -n '/pveversion/,+3{
+			/},/{=;p;q}
+		}' $pvejs)" ];then 
+		
+		sed -i "/pveversion/,+3{
+			/},/r $contentforpvejs
+		}" $pvejs
+		
+		$dmode && sed -n "/pveversion/,+8p" $pvejs
+	else
+		echo '找不到pvemanagerlib.js文件的修改点'
+		fail
+	fi
 
 
-#原高度300
-echo 修改左栏高度
-if [ "$(sed -n '/widget.pveNodeStatus/,+4{
-		/height:/{=;p;q}
-	}' "$pvejs")" ]; then 
-	
-	#获取原高度
-	wph=$(sed -n -E "/widget\.pveNodeStatus/,+4{
-		/height:/{s/[^0-9]*([0-9]+).*/\1/p;q}
-	}" "$pvejs")
-	
-	sed -i -E "/widget\.pveNodeStatus/,+4{
-		/height:/{
-			s#[0-9]+#$(( wph + addHei))#
-		}
-	}" "$pvejs"
-	
-	$dmode && sed -n '/widget.pveNodeStatus/,+4{
-		/height/{
-			p;q
-		}
-	}' "$pvejs"
+	echo 修改页面高度
+	#统计加了几条
+	addRs=$(grep -c '\$res' $contentfornp)
+	addHei=$(( 28 * addRs))
+	$dmode && echo "添加了$addRs条内容,增加高度为:${addHei}px"
 
-	#修改右边栏高度，让它和左边一样高，双栏的时候否则导致浮动出问题
-	#原高度325
-	echo 修改右栏高度和左栏一致，解决浮动错位
-	if [ "$(sed -n '/nodeStatus:\s*nodeStatus/,+10{
-			/minHeight:/{=;p;q}
-		}' "$pvejs")" ]; then 
+
+	#原高度300
+	echo 修改左栏高度
+	if [ "$(sed -n '/widget.pveNodeStatus/,+4{
+			/height:/{=;p;q}
+		}' $pvejs)" ]; then 
+		
 		#获取原高度
-		nph=$(sed -n -E '/nodeStatus:\s*nodeStatus/,+10{
-			/minHeight:/{s/[^0-9]*([0-9]+).*/\1/p;q}
-		}' "$pvejs")
+		wph=$(sed -n -E "/widget\.pveNodeStatus/,+4{
+			/height:/{s/[^0-9]*([0-9]+).*/\1/p;q}
+		}" $pvejs)
 		
-		sed -i -E "/nodeStatus:\s*nodeStatus/,+10{
-			/minHeight:/{
-				s#[0-9]+#$(( nph + addHei - (nph - wph) ))#
+		sed -i -E "/widget\.pveNodeStatus/,+4{
+			/height:/{
+				s#[0-9]+#$(( wph + addHei))#
 			}
-		}" "$pvejs"
+		}" $pvejs
 		
-		$dmode && sed -n '/nodeStatus:\s*nodeStatus/,+10{
-			/minHeight/{
+		$dmode && sed -n '/widget.pveNodeStatus/,+4{
+			/height/{
 				p;q
 			}
-		}' "$pvejs"
+		}' $pvejs
+
+		#修改右边栏高度，让它和左边一样高，双栏的时候否则导致浮动出问题
+		#原高度325
+		echo 修改右栏高度和左栏一致，解决浮动错位
+		if [ "$(sed -n '/nodeStatus:\s*nodeStatus/,+10{
+				/minHeight:/{=;p;q}
+			}' $pvejs)" ]; then 
+			#获取原高度
+			nph=$(sed -n -E '/nodeStatus:\s*nodeStatus/,+10{
+				/minHeight:/{s/[^0-9]*([0-9]+).*/\1/p;q}
+			}' "$pvejs")
+			
+			sed -i -E "/nodeStatus:\s*nodeStatus/,+10{
+				/minHeight:/{
+					s#[0-9]+#$(( nph + addHei - (nph - wph) ))#
+				}
+			}" $pvejs
+			
+			$dmode && sed -n '/nodeStatus:\s*nodeStatus/,+10{
+				/minHeight/{
+					p;q
+				}
+			}' $pvejs
+
+		else
+			echo 右边栏高度找不到修改点，修改失败
+			
+		fi
 
 	else
-		echo 右边栏高度找不到修改点，修改失败
-		
+		echo 找不到修改高度的修改点
+		fail
 	fi
 
 else
-	echo 找不到修改高度的修改点
-	fail
+	echo 已经修改过
 fi
-
-
 
 
 echo 温度，频率，硬盘信息相关修改已完成
@@ -460,19 +467,26 @@ echo ------------------------
 echo 开始修改proxmoxlib.js文件
 echo 去除订阅弹窗
 
-if [ "$(sed -n '/\/nodes\/localhost\/subscription/{=;p;q}' "$plibjs")" ];then 
-	sed -i '/\/nodes\/localhost\/subscription/,+10{
-		/res === null/{
-			N
-			s/(.*)/(false)/
-		}
-	}' "$plibjs" 
-	
-	$dmode && sed -n "/\/nodes\/localhost\/subscription/,+10p" "$plibjs"
-else 
-	echo 找不到修改点，放弃修改这个
-fi
+if ! grep -q 'modbyshowtempfreq' $plibjs ;then
 
+	[ ! -e $plibjs.$pvever.bak ] && cp $plibjs $plibjs.$pvever.bak
+	
+	if [ "$(sed -n '/\/nodes\/localhost\/subscription/{=;p;q}' $plibjs)" ];then 
+		sed -i '/\/nodes\/localhost\/subscription/,+10{
+			/res === null/{
+				N
+				s/(.*)/(false)/
+				a //modbyshowtempfreq
+			}
+		}' $plibjs
+		
+		$dmode && sed -n "/\/nodes\/localhost\/subscription/,+10p" $plibjs
+	else 
+		echo 找不到修改点，放弃修改这个
+	fi
+else
+	echo 已经修改过
+fi
 echo -e "------------------------
 修改完成
 请刷新浏览器缓存：\033[31mShift+F5\033[0m
