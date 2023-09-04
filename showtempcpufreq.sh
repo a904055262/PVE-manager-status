@@ -354,11 +354,10 @@ EOF
 fi
 echo "已添加 $sdi 块SATA固态和机械硬盘"
 
-
+echo 开始修改nodes.pm文件
 if ! grep -q 'modbyshowtempfreq' $np ;then
 	[ ! -e $np.$pvever.bak ] && cp $np $np.$pvever.bak
 	
-	echo 开始修改nodes.pm文件
 	if [ "$(sed -n "/PVE::pvecfg::version_text()/{=;p;q}" "$np")" ];then #确认修改点
 		#r追加文本后面必须跟回车，否则r 后面的文字都会被当成文件名，导致脚本出错
 		sed -i "/PVE::pvecfg::version_text()/{
@@ -374,10 +373,10 @@ else
 	echo 已经修改过
 fi
 
+echo 开始修改pvemanagerlib.js文件
 if ! grep -q 'modbyshowtempfreq' $pvejs ;then
 	[ ! -e $pvejs.$pvever.bak ]  && cp $pvejs $pvejs.$pvever.bak
 	
-	echo 开始修改pvemanagerlib.js文件
 	if [ "$(sed -n '/pveversion/,+3{
 			/},/{=;p;q}
 		}' $pvejs)" ];then 
