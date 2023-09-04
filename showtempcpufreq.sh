@@ -183,7 +183,7 @@ cat > $contentforpvejs << 'EOF'
 			let max = (v.match(/(?<=max:)\d+/i)[0]/1000000).toFixed(1);
 			let watt= v.match(/(?<=pkgwatt:)[\d.]+/i);
 			watt = watt? " | 功耗: " + (watt[0]/1).toFixed(1) + 'W' : '';
-			return `${m2}${watt} | MAX: ${max} | MIN: ${min} | 调速器: ${gov}`
+			return `${m2} | MAX: ${max} | MIN: ${min}${watt} | 调速器: ${gov}`
 		 }
 	},
 EOF
