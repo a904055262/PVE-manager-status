@@ -1,51 +1,53 @@
 #!/usr/bin/env bash
 
-
-#添加硬盘信息的控制变量，如果你想不显示硬盘信息就设置为0
+# version: 2023.9.4
+#添加硬盘信息的控制变量，如果你想不显示硬盘信息就设置为false
 #NVME硬盘
-sNVMEInfo=1
+sNVMEInfo=true
 #固态和机械硬盘
-sODisksInfo=1
+sODisksInfo=true
 #debug，显示修改后的内容，用于调试
-dmode=0
+dmode=false
 
 #脚本路径
-sdir=$(cd $(dirname ${BASH_SOURCE[0]}); pwd)
+sdir=$(cd "$(dirname "${BASH_SOURCE[0]}")"; pwd)
 cd "$sdir"
-sname=`awk -F '/' '{print $NF}' <<< ${BASH_SOURCE[0]}`
+
+sname=$(basename "${BASH_SOURCE[0]}")
 sap=$sdir/$sname
-echo "脚本路径：$sap"
+echo 脚本路径："$sap"
 
 #需要修改的文件
-np="/usr/share/perl5/PVE/API2/Nodes.pm"
-pvejs="/usr/share/pve-manager/js/pvemanagerlib.js"
-plib="/usr/share/javascript/proxmox-widget-toolkit/proxmoxlib.js"
+np=/usr/share/perl5/PVE/API2/Nodes.pm
+pvejs=/usr/share/pve-manager/js/pvemanagerlib.js
+plibjs=/usr/share/javascript/proxmox-widget-toolkit/proxmoxlib.js
 
 if ! command -v sensors > /dev/null 2>&1; then
 	echo 你需要先安装lm-sensors，脚本尝试给你自动安装
 	if apt update && apt install -y lm-sensors; then 
 		echo 安装lm-sensors成功，脚本继续执行
 	else
-		echo 脚本安装lm-sensors失败，请手动安装后继续执行本脚本
+		echo 脚本自动安装lm-sensors失败
+		echo -e "请使用蓝色命令：\033[34mapt update && apt install -y lm-sensors\033[0m 手动安装后重新运行本脚本"
 		echo 脚本退出
 		exit 1
   fi
 fi
 
 #获取版本号
-pvever=`pveversion | awk -F"/" '{print $2}'`
+pvever=$(pveversion | awk -F"/" '{print $2}')
 echo "你的PVE版本号：$pvever"
 
 backup() {
-	cp "$np" "$np.$pvever.bak"
-	cp "$pvejs" "$pvejs.$pvever.bak"
-	cp "$plib" "$plib.$pvever.bak"
+	[ ! -e $np.$pvever.bak ]     && cp $np $np.$pvever.bak
+	[ ! -e $pvejs.$pvever.bak ]  && cp $pvejs $pvejs.$pvever.bak
+	[ ! -e $plibjs.$pvever.bak ] && cp $plibjs $plibjs.$pvever.bak
 }
 
 restore() {
-	mv "$np.$pvever.bak" "$np"
-	mv "$pvejs.$pvever.bak" "$pvejs"
-	mv "$plib.$pvever.bak" "$plib" 
+	[ -e $np.$pvever.bak ]     && mv $np.$pvever.bak $np
+	[ -e $pvejs.$pvever.bak ]  && mv $pvejs.$pvever.bak $pvejs
+	[ -e $plibjs.$pvever.bak ] && mv $plibjs.$pvever.bak $plibjs
 }
 
 fail() {
@@ -56,35 +58,33 @@ fail() {
 }
 
 #还原修改
-case "$1" in 
+case $1 in 
 	restore)
-		if [ -e "$np.$pvever.bak" ];then  
-			restore
-			echo 已还原修改
-			
-			if [ "$2" != 'remod' ];then 
-				echo -e "请刷新浏览器缓存：\033[31mShift+F5\033[0m"
-				systemctl restart pveproxy
-			else 
-				echo -----
-			fi
-		else
-			echo 文件没有被修改过
+
+		restore
+		echo 已还原修改
+		
+		if [ "$2" != 'remod' ];then 
+			echo -e "请刷新浏览器缓存：\033[31mShift+F5\033[0m"
+			systemctl restart pveproxy
+		else 
+			echo -----
 		fi
+
 		
 		exit 0
 	;;
 	remod)
 		echo 强制重新修改
 		echo -----------
-		"$sap" restore remod
+		"$sap" restore remod > /dev/null 
 		"$sap"
 		exit 0
 	;;
 esac
 
 #检测是否已经修改过
-[ -e "$np.$pvever.bak" ] && {
+[[ -e $np.$pvever.bak && -e $pvejs.$pvever.bak && -e $plibjs.$pvever.bak ]] && {
 	echo -e "
 	已经修改过，请勿重复修改
 	如果没有生效，或者页面一直转圈圈
@@ -98,9 +98,9 @@ echo 备份源文件
 backup
 
 
-tmpf0=.dfadfasdf.tmp
+contentfornp=/tmp/.contentfornp.tmp
 
-cat > $tmpf0 << 'EOF'
+cat > $contentfornp << 'EOF'
 $res->{thermalstate} = `sensors -A`;
 $res->{cpuFreq} = `
 	cat /proc/cpuinfo | grep -i  "cpu mhz"
@@ -114,9 +114,9 @@ $res->{cpuFreq} = `
 EOF
 
 
-tmpf=.sdfadfasdf.tmp
+contentforpvejs=/tmp/.contentforpvejs.tmp
 
-cat > $tmpf << 'EOF'
+cat > $contentforpvejs << 'EOF'
 	{
 		itemId: 'thermal',
 		colspan: 2,
@@ -130,7 +130,12 @@ cat > $tmpf << 'EOF'
 			let c = b.map(function (v){
 				let name = v.match(/^[^-]+/)[0].toUpperCase();
 				
-				let temp = v.match(/(?<=:\s+\+?)-?\d+/g);
+				let temp = v.match(/(?<=:\s+[+-]?)\d+/g);
+				// 某些没有数据的传感器
+				if ( ! temp ) {
+					
+					return 'null'
+				}
 				
 				if (/coretemp/i.test(name)) {
 					name = 'CPU';
@@ -144,7 +149,8 @@ cat > $tmpf << 'EOF'
 				
 				return name + ': ' + temp + ( crit? ` ,crit: ${crit[0]}` : '');
 			});
-			
+			// 排除null值的
+			c=c.filter( v => ! /^null$/.test(v) )
 			//console.log(c);
 			//排序，把cpu温度放最前
 			let cpuIdx = c.findIndex(v => /CPU/i.test(v) );
@@ -152,7 +158,7 @@ cat > $tmpf << 'EOF'
 				c.unshift(c.splice(cpuIdx, 1)[0]);
 			}
 			
-			// console.log(c)
+			console.log(c)
 			c = c.join(' | ');
 			return c;
 		 }
@@ -180,17 +186,16 @@ EOF
 #检测nvme硬盘
 echo 检测系统中的NVME硬盘
 nvi=0
-if [ $sNVMEInfo -eq 1 ] && ls /dev/nvme[0-9] >/dev/null 2>&1;then
-	for nvme in `ls /dev/nvme[0-9]`; do
+if $sNVMEInfo;then
+	for nvme in $(ls /dev/nvme[0-9] 2> /dev/null); do
 		chmod +s /usr/sbin/smartctl
-		#echo '$res->{nvme'"$nvi"'} = `smartctl '"$nvme"' -a -j`;' >> $tmpf0
 
-		cat >> $tmpf0 << EOF
+		cat >> $contentfornp << EOF
 	\$res->{nvme$nvi} = \`smartctl $nvme -a -j\`;
 EOF
 		
 		
-		cat >> $tmpf << EOF
+		cat >> $contentforpvejs << EOF
 		{
 			  itemId: 'nvme${nvi}0',
 			  colspan: 2,
@@ -267,18 +272,18 @@ echo "已添加 $nvi 块NVME硬盘"
 #检测机械键盘
 echo 检测系统中的SATA固态和机械硬盘
 sdi=0
-if [ $sODisksInfo -eq 1 ] && ls /dev/sd[a-z] >/dev/null 2>&1;then
-	for sd in `ls /dev/sd[a-z]`;do
+if $sODisksInfo;then
+	for sd in $(ls /dev/sd[a-z] 2> /dev/null);do
 		chmod +s /usr/sbin/smartctl
 		#检测是否是真的机械键盘
-		sdsn=`echo $sd | awk -F '/' '{print $NF}'`
+		sdsn=$(echo $sd | awk -F '/' '{print $NF}')
 		sdcr=/sys/block/$sdsn/queue/rotational
 		sdtype="机械硬盘$sdi"
 		
 		if [ ! -e $sdcr ];then
 			continue
 		else
-			if [ "`cat $sdcr`" -eq 0 ];then 
+			if [ "$(cat $sdcr)" -eq 0 ];then 
 				sdtype="固态硬盘$sdi"
 			fi
 		fi
@@ -287,7 +292,7 @@ if [ $sODisksInfo -eq 1 ] && ls /dev/sd[a-z] >/dev/null 2>&1;then
 		#机械/固态硬盘输出信息逻辑,
 		#如果硬盘不存在就输出空JSON
 
-		cat >> $tmpf0 << EOF
+		cat >> $contentfornp << EOF
 	\$res->{sd$sdi} = \`
 		if [ -b $sd ];then
 			smartctl $sd -a -j
@@ -297,7 +302,7 @@ if [ $sODisksInfo -eq 1 ] && ls /dev/sd[a-z] >/dev/null 2>&1;then
 	\`;
 EOF
 
-		cat >> $tmpf << EOF
+		cat >> $contentforpvejs << EOF
 		{
 			  itemId: 'sd${sdi}0',
 			  colspan: 2,
@@ -352,9 +357,9 @@ echo 开始修改nodes.pm文件
 if [ "$(sed -n "/PVE::pvecfg::version_text()/{=;p;q}" "$np")" ];then #确认修改点
 	#r追加文本后面必须跟回车，否则r 后面的文字都会被当成文件名，导致脚本出错
 	sed -i "/PVE::pvecfg::version_text()/{
-		r $tmpf0
+		r $contentfornp
 	}" "$np"
-	[ $dmode -eq 1 ] && sed -n "/PVE::pvecfg::version_text()/,+5p" "$np"
+	$dmode && sed -n "/PVE::pvecfg::version_text()/,+5p" "$np"
 else
 	echo '找不到nodes.pm文件的修改点'
 	
@@ -368,10 +373,10 @@ if [ "$(sed -n '/pveversion/,+3{
 	}' "$pvejs")" ];then 
 	
 	sed -i "/pveversion/,+3{
-		/},/r $tmpf
+		/},/r $contentforpvejs
 	}" "$pvejs"
 	
-	[ $dmode -eq 1 ] && sed -n "/pveversion/,+8p" "$pvejs"
+	$dmode && sed -n "/pveversion/,+8p" "$pvejs"
 else
 	echo '找不到pvemanagerlib.js文件的修改点'
 	fail
@@ -379,9 +384,9 @@ fi
 
 echo 修改页面高度
 #统计加了几条
-addRs=`grep -c '\$res' $tmpf0`
+addRs=$(grep -c '\$res' $contentfornp)
 addHei=$(( 28 * addRs))
-[ $dmode -eq 1 ] && echo "添加了$addRs条内容,增加高度为:${addHei}px"
+$dmode && echo "添加了$addRs条内容,增加高度为:${addHei}px"
 
 
 #原高度300
@@ -401,7 +406,7 @@ if [ "$(sed -n '/widget.pveNodeStatus/,+4{
 		}
 	}" "$pvejs"
 	
-	[ $dmode -eq 1 ] && sed -n '/widget.pveNodeStatus/,+4{
+	$dmode && sed -n '/widget.pveNodeStatus/,+4{
 		/height/{
 			p;q
 		}
@@ -424,7 +429,7 @@ if [ "$(sed -n '/widget.pveNodeStatus/,+4{
 			}
 		}" "$pvejs"
 		
-		[ $dmode -eq 1 ] && sed -n '/nodeStatus:\s*nodeStatus/,+10{
+		$dmode && sed -n '/nodeStatus:\s*nodeStatus/,+10{
 			/minHeight/{
 				p;q
 			}
@@ -449,24 +454,24 @@ echo ------------------------
 echo 开始修改proxmoxlib.js文件
 echo 去除订阅弹窗
 
-if [ "$(sed -n '/\/nodes\/localhost\/subscription/{=;p;q}' "$plib")" ];then 
+if [ "$(sed -n '/\/nodes\/localhost\/subscription/{=;p;q}' "$plibjs")" ];then 
 	sed -i '/\/nodes\/localhost\/subscription/,+10{
 		/res === null/{
 			N
 			s/(.*)/(false)/
 		}
-	}' "$plib" 
+	}' "$plibjs" 
 	
-	[ $dmode -eq 1 ] && sed -n "/\/nodes\/localhost\/subscription/,+10p" "$plib"
+	$dmode && sed -n "/\/nodes\/localhost\/subscription/,+10p" "$plibjs"
 else 
 	echo 找不到修改点，放弃修改这个
 fi
 
 echo -e "------------------------
-	修改完成
-	请刷新浏览器缓存：\033[31mShift+F5\033[0m
-	如果你看到主页面提示连接错误或者没看到温度和频率，请按：\033[31mShift+F5\033[0m，刷新浏览器缓存！
-	如果你对效果不满意，请执行：\033[31m\"$sap\" restore\033[0m 命令，可以还原修改
+修改完成
+请刷新浏览器缓存：\033[31mShift+F5\033[0m
+如果你看到主页面提示连接错误或者没看到温度和频率，请按：\033[31mShift+F5\033[0m，刷新浏览器缓存！
+如果你对效果不满意，请执行：\033[31m\"$sap\" restore\033[0m 命令，可以还原修改
 "
 
 systemctl restart pveproxy
