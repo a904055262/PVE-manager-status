@@ -98,7 +98,11 @@ esac
 
 contentfornp=/tmp/.contentfornp.tmp
 
-[ -e /usr/sbin/turbostat ] && chmod +s /usr/sbin/turbostat
+[ -e /usr/sbin/turbostat ] && {
+	modprobe msr
+	chmod +s /usr/sbin/turbostat
+}
+echo msr > /etc/modules-load.d/turbostat-msr.conf
 
 cat > $contentfornp << 'EOF'
 
@@ -114,7 +118,7 @@ $res->{cpuFreq} = `
 	echo -n 'max:'
 	cat /sys/devices/system/cpu/cpufreq/policy0/cpuinfo_max_freq
 	echo -n 'pkgwatt:'
-	[ -e /usr/sbin/turbostat ] && modprobe msr && turbostat --quiet --cpu package --show "PkgWatt" -S sleep 0 2>&1| tail -n1
+	[ -e /usr/sbin/turbostat ] && turbostat --quiet --cpu package --show "PkgWatt" -S sleep 0 2>&1| tail -n1
 
 `;
 EOF
