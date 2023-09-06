@@ -31,7 +31,7 @@ if ! command -v sensors > /dev/null; then
 		if apt install -y linux-cpupower;then
 			echo linux-cpupower安装成功
 		else
-			echo -e "linux-cpupower安装失败，可能无法正常获取功耗信息，你可以使用\033[34mapt update ; apt install linux-cpupower && chmod +s /usr/sbin/turbostat && echo 成功！\033[0m 手动安装"
+			echo -e "linux-cpupower安装失败，可能无法正常获取功耗信息，你可以使用\033[34mapt update ; apt install linux-cpupower && modprobe msr && echo msr > /etc/modules-load.d/turbostat-msr.conf && chmod +s /usr/sbin/turbostat && echo 成功！\033[0m 手动安装"
 		fi
 	else
 		echo 脚本自动安装所需依赖失败
