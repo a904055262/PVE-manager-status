@@ -114,7 +114,7 @@ $res->{cpuFreq} = `
 	echo -n 'max:'
 	cat /sys/devices/system/cpu/cpufreq/policy0/cpuinfo_max_freq
 	echo -n 'pkgwatt:'
-	[ -e /usr/sbin/turbostat ] && turbostat --quiet --cpu package --show "PkgWatt" -S sleep 0 2>&1| tail -n1
+	[ -e /usr/sbin/turbostat ] && modprobe msr && turbostat --quiet --cpu package --show "PkgWatt" -S sleep 0 2>&1| tail -n1
 
 `;
 EOF
