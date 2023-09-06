@@ -22,17 +22,25 @@ np=/usr/share/perl5/PVE/API2/Nodes.pm
 pvejs=/usr/share/pve-manager/js/pvemanagerlib.js
 plibjs=/usr/share/javascript/proxmox-widget-toolkit/proxmoxlib.js
 
-if ! command -v sensors > /dev/null || ! command -v turbostat > /dev/null ; then
+if ! command -v sensors > /dev/null; then
 	echo 你需要先安装 lm-sensors 和 linux-cpupower，脚本尝试给你自动安装
-	if apt update && apt install -y lm-sensors linux-cpupower; then 
-		echo 安装成功，脚本继续执行
+	if apt update ; apt install -y lm-sensors; then 
+		echo lm-sensors 安装成功
+		
+		echo 尝试继续安装linux-cpupower获取功耗信息
+		if apt install -y linux-cpupower;then
+			echo linux-cpupower安装成功
+		else
+			echo -e "linux-cpupower安装失败，可能无法正常获取功耗信息，你可以使用\033[34mapt update ; apt install linux-cpupower && chmod +s /usr/sbin/turbostat && echo 成功！\033[0m 手动安装"
+		fi
 	else
 		echo 脚本自动安装所需依赖失败
-		echo -e "请使用蓝色命令：\033[34mapt update && apt install -y lm-sensors linux-cpupower\033[0m 手动安装后重新运行本脚本"
+		echo -e "请使用蓝色命令：\033[34mapt update ; apt install -y lm-sensors linux-cpupower && chmod +s /usr/sbin/turbostat && echo 成功！ \033[0m 手动安装后重新运行本脚本"
 		echo 脚本退出
 		exit 1
 	fi
 fi
+
 
 #获取版本号
 pvever=$(pveversion | awk -F"/" '{print $2}')
@@ -90,7 +98,7 @@ esac
 
 contentfornp=/tmp/.contentfornp.tmp
 
-chmod +s /usr/sbin/turbostat
+[ -e /usr/sbin/turbostat ] && chmod +s /usr/sbin/turbostat
 
 cat > $contentfornp << 'EOF'
 
@@ -106,7 +114,7 @@ $res->{cpuFreq} = `
 	echo -n 'max:'
 	cat /sys/devices/system/cpu/cpufreq/policy0/cpuinfo_max_freq
 	echo -n 'pkgwatt:'
-	turbostat --quiet --cpu package --show "PkgWatt" -S sleep 0 2>&1| tail -n1
+	[ -e /usr/sbin/turbostat ] && turbostat --quiet --cpu package --show "PkgWatt" -S sleep 0 2>&1| tail -n1
 
 `;
 EOF
