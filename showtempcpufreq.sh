@@ -290,6 +290,7 @@ sdi=0
 if $sODisksInfo;then
 	for sd in $(ls /dev/sd[a-z] 2> /dev/null);do
 		chmod +s /usr/sbin/smartctl
+		chmod +s /usr/sbin/hdparm
 		#检测是否是真的机械键盘
 		sdsn=$(awk -F '/' '{print $NF}' <<< $sd)
 		sdcr=/sys/block/$sdsn/queue/rotational
