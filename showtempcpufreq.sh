@@ -310,7 +310,11 @@ if $sODisksInfo;then
 		cat >> $contentfornp << EOF
 	\$res->{sd$sdi} = \`
 		if [ -b $sd ];then
-			smartctl $sd -a -j
+			if hdparm -C $sd | grep -iq 'standby';then
+				echo '{"standy": true}'
+			else
+				smartctl $sd -a -j
+			fi
 		else
 			echo '{}'
 		fi
@@ -328,6 +332,11 @@ EOF
 				//return value;
 				try{
 					let  v = JSON.parse(value);
+					console.log(v)
+					if (v.standy === true) {
+						return '休眠中'
+					}
+					
 					//名字
 					let model = v.model_name;
 					if (! model) {
