@@ -291,18 +291,18 @@ if $sODisksInfo;then
 	for sd in $(ls /dev/sd[a-z] 2> /dev/null);do
 		chmod +s /usr/sbin/smartctl
 		#检测是否是真的机械键盘
-		sdsn=$(echo $sd | awk -F '/' '{print $NF}')
+		sdsn=$(awk -F '/' '{print $NF}' <<< $sd)
 		sdcr=/sys/block/$sdsn/queue/rotational
-		sdtype="机械硬盘$sdi"
+		[ -f $sdcr ] || continue
 		
-		if [ ! -e $sdcr ];then
-			continue
+		if [ "$(cat $sdcr)" = "0" ];then
+			hddisk=false
+			sdtype="固态硬盘$sdi"
 		else
-			if [ "$(cat $sdcr)" -eq 0 ];then 
-				sdtype="固态硬盘$sdi"
-			fi
+			hddisk=true
+			sdtype="机械硬盘$sdi"
 		fi
-
+		
 		#[] && 型条件判断，嵌套的条件判断的非 || 后面一定要写动作，否则会穿透到上一层的非条件
 		#机械/固态硬盘输出信息逻辑,
 		#如果硬盘不存在就输出空JSON
@@ -310,7 +310,7 @@ if $sODisksInfo;then
 		cat >> $contentfornp << EOF
 	\$res->{sd$sdi} = \`
 		if [ -b $sd ];then
-			if hdparm -C $sd | grep -iq 'standby';then
+			if $hddisk && hdparm -C $sd | grep -iq 'standby';then
 				echo '{"standy": true}'
 			else
 				smartctl $sd -a -j
