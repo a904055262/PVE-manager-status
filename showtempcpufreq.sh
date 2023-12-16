@@ -110,15 +110,19 @@ cat > $contentfornp << 'EOF'
 
 $res->{thermalstate} = `sensors -A`;
 $res->{cpuFreq} = `
+	goverf=/sys/devices/system/cpu/cpufreq/policy0/scaling_governor
+	maxf=/sys/devices/system/cpu/cpufreq/policy0/cpuinfo_max_freq
+	minf=/sys/devices/system/cpu/cpufreq/policy0/cpuinfo_min_freq
+	
 	cat /proc/cpuinfo | grep -i  "cpu mhz"
 	echo -n 'gov:'
-	cat /sys/devices/system/cpu/cpufreq/policy0/scaling_governor
+	[ -f \$goverf ] && cat \$goverf || echo none
 	echo -n 'min:'
-	cat /sys/devices/system/cpu/cpufreq/policy0/cpuinfo_min_freq
+	[ -f \$minf ] && cat \$minf || echo none
 	echo -n 'max:'
-	cat /sys/devices/system/cpu/cpufreq/policy0/cpuinfo_max_freq
+	[ -f \$maxf ] && cat \$maxf || echo none
 	echo -n 'pkgwatt:'
-	[ -e /usr/sbin/turbostat ] && turbostat --quiet --cpu package --show "PkgWatt" -S sleep 0.25 2>&1| tail -n1
+	[ -e /usr/sbin/turbostat ] && turbostat --quiet --cpu package --show "PkgWatt" -S sleep 0.25 2>&1 | tail -n1 
 
 `;
 EOF
@@ -183,15 +187,26 @@ cat > $contentforpvejs << 'EOF'
 		  textField: 'cpuFreq',
 		  renderer:function(v){
 			//return v;
-			console.log(v)
-			let m = v.match(/(?<=cpu[^\d]+)\d+/ig);
+			console.log(v);
+			let m = v.match(/(?<=^cpu[^\d]+)\d+/img);
 			let m2 = m.map( e => ( e / 1000 ).toFixed(1) );
 			m2 = m2.join(' | ');
-			let gov = v.match(/(?<=gov:).+/i)[0].toUpperCase();
-			let min = (v.match(/(?<=min:)\d+/i)[0]/1000000).toFixed(1);
-			let max = (v.match(/(?<=max:)\d+/i)[0]/1000000).toFixed(1);
-			let watt= v.match(/(?<=pkgwatt:)[\d.]+/i);
+			
+			let gov = v.match(/(?<=^gov:).+/im)[0].toUpperCase();
+			
+			let min = (v.match(/(?<=^min:).+/im)[0]);
+			if ( min !== 'none' ) {
+				min=(min/1000000).toFixed(1);
+			}
+			
+			let max = (v.match(/(?<=^max:).+/im)[0])
+			if ( max !== 'none' ) {
+				max=(max/1000000).toFixed(1);
+			}
+			
+			let watt= v.match(/(?<=^pkgwatt:)[\d.]+$/im);
 			watt = watt? " | 功耗: " + (watt[0]/1).toFixed(1) + 'W' : '';
+			
 			return `${m2} | MAX: ${max} | MIN: ${min}${watt} | 调速器: ${gov}`
 		 }
 	},
