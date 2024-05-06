@@ -141,30 +141,41 @@ cat > $contentforpvejs << 'EOF'
 		textField: 'thermalstate',
 		renderer:function(value){
 			//value进来的值是有换行符的
-			
+			console.log(value)
 			let b = value.trim().split(/\s+(?=^\w+-)/m).sort();
 			let c = b.map(function (v){
+				// 风扇转速数据，直接返回
+				let fandata = v.match(/(?<=:\s+)[1-9]\d*(?=\s+RPM\s+)/ig)
+				if ( fandata ) {
+					return '风扇: ' + fandata.join(';')
+				}
+			
 				let name = v.match(/^[^-]+/)[0].toUpperCase();
 				
-				let temp = v.match(/(?<=:\s+[+-]?)\d+/g);
-				// 某些没有数据的传感器
-				if ( ! temp ) {
+				let temp = v.match(/(?<=:\s+)[+-][\d.]+(?=.?°C)/g);
+				// 某些没有数据的传感器,不是温度的传感器
+				if ( temp ) {
+					temp = temp.map(v => Number(v).toFixed(0))
 					
+					if (/coretemp/i.test(name)) {
+						name = 'CPU';
+						temp = temp[0] + ( temp.length > 1 ? ' ( ' +   temp.slice(1).join(' | ') + ' )' : '');
+					} else {
+						temp = temp[0];
+					}
+					
+					let crit = v.match(/(?<=\bcrit\b[^+]+\+)\d+/);
+					
+					
+					return name + ': ' + temp + ( crit? ` ,crit: ${crit[0]}` : '');
+					
+				} else {
 					return 'null'
 				}
 				
-				if (/coretemp/i.test(name)) {
-					name = 'CPU';
-					temp = temp[0] + ' ( ' +   temp.slice(1).join(' | ') + ' )';
-				} else {
-					temp = temp[0];
-				}
-				
-				let crit = v.match(/(?<=\bcrit\b[^+]+\+)\d+/);
-				
-				
-				return name + ': ' + temp + ( crit? ` ,crit: ${crit[0]}` : '');
+
 			});
+			console.log(c);
 			// 排除null值的
 			c=c.filter( v => ! /^null$/.test(v) )
 			//console.log(c);
