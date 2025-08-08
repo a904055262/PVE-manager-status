@@ -520,10 +520,11 @@ if ! grep -q 'modbyshowtempfreq' $plibjs ;then
 	
 	if [ "$(sed -n '/\/nodes\/localhost\/subscription/{=;p;q}' $plibjs)" ];then 
 		sed -i '/\/nodes\/localhost\/subscription/,+10{
-			/res === null/{
-				N
-				s/(.*)/(false)/
-				a //modbyshowtempfreq
+			/if/ {
+				:loop; N;
+				s/if\s*(.*)\s*{/if (false) {/;
+				t done; b loop; :done;
+				a //modbyshowtempfreq;
 			}
 		}' $plibjs
 		
