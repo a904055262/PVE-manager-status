@@ -90,7 +90,7 @@ esac
 如果没有生效，或者页面一直转圈圈
 请使用 \033[31mShift+F5\033[0m 刷新浏览器缓存
 如果一直异常，请执行：\033[31m\"$sap\" restore\033[0m 命令，可以还原修改
-如果想强制重新修改，请执行：\033[31m\"$sap\" remod\033[0m 命令，可以还原修改
+如果想强制重新修改，请执行：\033[31m\"$sap\" remod\033[0m 命令，可以强制重新修改
 "
 	exit 1
 }
@@ -520,10 +520,11 @@ if ! grep -q 'modbyshowtempfreq' $plibjs ;then
 	
 	if [ "$(sed -n '/\/nodes\/localhost\/subscription/{=;p;q}' $plibjs)" ];then 
 		sed -i '/\/nodes\/localhost\/subscription/,+10{
-			/res === null/{
-				N
-				s/(.*)/(false)/
-				a //modbyshowtempfreq
+			/if/ {
+				:loop; N;
+				s/if\s*(.*)\s*{/if (false) {/;
+				t done; b loop; :done;
+				a //modbyshowtempfreq;
 			}
 		}' $plibjs
 		
