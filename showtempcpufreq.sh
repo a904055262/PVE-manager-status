@@ -63,22 +63,24 @@ fail() {
 case $1 in 
 	restore)
 		restore
-		echo 已还原修改
-		
+		echo 已还原修改		
 		if [ "$2" != 'remod' ];then 
 			echo -e "请刷新浏览器缓存：\033[31mShift+F5\033[0m"
 			systemctl restart pveproxy
 		else 
 			echo -----
-		fi
-		
+		fi		
 		exit 0
 	;;
-	remod)
-		echo 强制重新修改
-		echo -----------
+	remod|refresh)
+		echo "正在重新扫描硬件并刷新配置..."
+		echo "-----------"
+		# 执行还原但不重启服务
 		"$sap" restore remod > /dev/null 
+		# 重新运行脚本进行扫描修改
 		"$sap"
+		echo -e "\033[32m刷新完成！\033[0m"
+		echo -e "请刷新浏览器缓存：\033[31mShift+F5\033[0m"
 		exit 0
 	;;
 esac
@@ -125,8 +127,29 @@ $res->{cpuFreq} = `
 	[ -e /usr/sbin/turbostat ] && turbostat --quiet --cpu package --show "PkgWatt" -S sleep 0.25 2>&1 | tail -n1 
 
 `;
-EOF
+# 修改后的 contentfornp UPS 部分
+$res->{ups} = `
+	if [ -f /etc/apcupsd/apcupsd.conf ]; then
+		# 注意：在 cat << 'EOF' 环境下，内部的 $ 符号如果想让 shell 执行，需要保持原样
+		# 但为了防止 Perl 误判，我们确保逻辑简单
+		_TYPE=\$(awk '/^UPSTYPE/ {print \$2}' /etc/apcupsd/apcupsd.conf)
+		_DEV=\$(awk '/^DEVICE/ {print \$2}' /etc/apcupsd/apcupsd.conf)
+		if [ "\$_TYPE" = "net" ]; then
+			echo "UPS_CONN : net:\$_DEV"
+		else
+			echo "UPS_CONN : local:\$_TYPE"
+		fi
+	else
+		echo "UPS_CONN : unknown"
+	fi
 
+	if command -v apcaccess >/dev/null 2>&1; then
+		apcaccess status 2>/dev/null
+	else
+		echo "NO_APCACCESS"
+	fi
+`;
+EOF
 
 
 contentforpvejs=/tmp/.contentforpvejs.tmp
@@ -221,6 +244,78 @@ cat > $contentforpvejs << 'EOF'
 			return `${m2} | MAX: ${max} | MIN: ${min}${watt} | 调速器: ${gov}`
 		 }
 	},
+	//modbyshowtempfreq UPS
+	{
+		itemId: 'upsinfo',
+		colspan: 2,
+		printBar: false,
+		title: gettext('UPS'),
+		textField: 'ups',
+		
+		renderer: function (v) {
+		if (!v || v.indexOf('NO_APCACCESS') !== -1) {
+			return '未检测到 UPS';
+		}
+
+		let get = (k) => {
+			let m = v.match(new RegExp('^' + k + '\\s*:\\s*(.+)$', 'mi'));
+			return m ? m[1].trim() : '';
+		};
+
+		// 1. 获取基础数据
+		let statusRaw = get('STATUS');
+		let chargeRaw = get('BCHARGE');
+		let load      = get('LOADPCT');
+		let runtime   = get('TIMELEFT');
+		let battv     = get('BATTV');
+		let model     = get('MODEL');
+		let connRaw   = get('UPS_CONN');
+		let chargeVal = parseFloat(chargeRaw); 
+
+		// 使用正则去掉 "Back-UPS " 等前缀，只保留核心型号
+        let cleanModel = model.replace(/Back-UPS\s+/i, '');        
+
+		// 2. 处理连接方式
+		let conn = '未知';
+		if (/^net:/i.test(connRaw)) {
+			conn = connRaw.replace(/^net:/i, '');
+		} else if (/^local:/i.test(connRaw)) {
+			conn = connRaw.replace(/^local:/i, '');
+		}
+
+		// 3. 处理状态映射
+		let statusMap = {
+			'ONLINE': '市电',
+			'ONBATT': '电池供电',
+			'LOWBATT': '电量低',
+			'CHARGING': '充电中'
+		};
+		let status = statusMap[statusRaw] || statusRaw || '未知';
+
+		// 4. 充电逻辑增强判断
+		if (statusRaw === 'ONLINE' && chargeVal < 100) {
+			status += ' (充电中)';
+		}
+
+		// 5. 格式化单位
+		let charge  = chargeRaw ? chargeRaw.replace(/\s*Percent/i, '%') : '';
+		if (load)    load    = load.replace(/\s*Percent/i, '%');
+		if (runtime) runtime = runtime.replace(/\s*Minutes/i, 'min');
+		if (battv)   battv   = battv.replace(/\s*Volts?/i, 'V');
+
+		// 6. 组装显示数组
+		let s = [];
+		s.push('状态: ' + status);
+		s.push('连接: ' + conn);		
+		if (charge)  s.push('电量: ' + charge);
+		if (battv)   s.push('电压: ' + battv);
+		if (load)    s.push('负载: ' + load);
+		if (runtime) s.push('剩余: ' + runtime);
+		if (cleanModel)  s.push('型号: ' + cleanModel);
+
+		return s.join(' | ');
+	}
+	},
 EOF
 
 
@@ -252,6 +347,11 @@ EOF
 					if (! model) {
 						return '找不到硬盘，直通或已被卸载';
 					}
+					//序列号
+					let snRaw = v.serial_number;
+					// 如果存在则返回带前缀的字符串，否则返回空字符串
+					let sn = snRaw ? " | SN: "+ snRaw : '';
+					
 					// 温度
 					let temp = v.temperature?.current;
 					temp = ( temp !== undefined ) ? " | " + temp + '°C' : '' ;
@@ -293,7 +393,7 @@ EOF
 					}
 					
 					
-					let t = model  + temp + health + pot + rw + smart;
+					let t = model + temp + health + pot + rw + smart;
 					//console.log(t);
 					return t;
 				}catch(e){
@@ -308,99 +408,93 @@ EOF
 fi
 echo "已添加 $nvi 块NVME硬盘"
 
+#检测机械硬盘
+echo "正在重新整理硬盘显示顺序：SATA在前，USB在后..."
+sdi=0    # 统一索引，确保前后端对应
+hdi=0    # SATA显示序号
+usbi=0   # USB显示序号
 
+# 定义一个处理函数，减少重复代码
+generate_disk_config() {
+    local dev_path=$1
+    local is_usb=$2
+    local hddisk=$3
+    local sdtype=$4
 
-#检测机械键盘
-echo 检测系统中的SATA固态和机械硬盘
-sdi=0
-if $sODisksInfo;then
-	for sd in $(ls /dev/sd[a-z] 2> /dev/null);do
-		chmod +s /usr/sbin/smartctl
-		chmod +s /usr/sbin/hdparm
-		#检测是否是真的机械键盘
-		sdsn=$(awk -F '/' '{print $NF}' <<< $sd)
-		sdcr=/sys/block/$sdsn/queue/rotational
-		[ -f $sdcr ] || continue
-		
-		if [ "$(cat $sdcr)" = "0" ];then
-			hddisk=false
-			sdtype="固态硬盘$sdi"
-		else
-			hddisk=true
-			sdtype="机械硬盘$sdi"
-		fi
-		
-		#[] && 型条件判断，嵌套的条件判断的非 || 后面一定要写动作，否则会穿透到上一层的非条件
-		#机械/固态硬盘输出信息逻辑,
-		#如果硬盘不存在就输出空JSON
-
-		cat >> $contentfornp << EOF
-	\$res->{sd$sdi} = \`
-		if [ -b $sd ];then
-			if $hddisk && hdparm -C $sd | grep -iq 'standby';then
-				echo '{"standy": true}'
-			else
-				smartctl $sd -a -j
-			fi
-		else
-			echo '{}'
-		fi
-	\`;
+    # 1. 写入 Nodes.pm 后端取数逻辑
+    cat >> $contentfornp << EOF
+    \$res->{sd$sdi} = \`
+        if [ -b $dev_path ];then
+            if $hddisk && hdparm -C $dev_path 2>/dev/null | grep -iq 'standby';then
+                echo '{"standby": true}'
+            else
+                smartctl $dev_path -a -j || echo '{"model_name": "Read Error"}'
+            fi
+        else
+            echo '{}'
+        fi
+    \`;
 EOF
 
-		cat >> $contentforpvejs << EOF
-		{
-			  itemId: 'sd${sdi}0',
-			  colspan: 2,
-			  printBar: false,
-			  title: gettext('${sdtype}'),
-			  textField: 'sd${sdi}',
-			  renderer:function(value){
-				//return value;
-				try{
-					let  v = JSON.parse(value);
-					console.log(v)
-					if (v.standy === true) {
-						return '休眠中'
-					}
-					
-					//名字
-					let model = v.model_name;
-					if (! model) {
-						return '找不到硬盘，直通或已被卸载';
-					}
-					// 温度
-					let temp = v.temperature?.current;
-					temp = ( temp !== undefined ) ? " | 温度: " + temp + '°C' : '' ;
-					
-					// 通电时间
-					let pot = v.power_on_time?.hours;
-					let poth = v.power_cycle_count;
-					
-					pot = ( pot !== undefined ) ? (" | 通电: " + pot + '时' + ( poth ? ',次: '+ poth : '' )) : '';
-					
-					// smart状态
-					let smart = v.smart_status?.passed;
-					if (smart === undefined ) {
-						smart = '';
-					} else {
-						smart = ' | SMART: ' + (smart ? '正常' : '警告!');
-					}
-					
-					
-					let t = model + temp  + pot + smart;
-					//console.log(t);
-					return t;
-				}catch(e){
-					return '无法获得有效消息';
-				};
-			 }
-		},
+    # 2. 写入 pvemanagerlib.js 前端渲染逻辑
+    cat >> $contentforpvejs << EOF
+    {
+          itemId: 'sd${sdi}0',
+          colspan: 2,
+          printBar: false,
+          title: gettext('${sdtype}'),
+          textField: 'sd${sdi}',
+          renderer:function(value){
+            try{
+                let v = JSON.parse(value);
+                if (v.standby === true) return '休眠中';
+                let model = v.model_name;
+                if (!model) return '找不到硬盘，直通或已被卸载';
+                let snRaw = v.serial_number;
+                let sn = snRaw ? " | SN: "+ snRaw : '';
+                let temp = v.temperature?.current;
+                temp = ( temp !== undefined ) ? " | 温度: " + temp + '°C' : '' ;
+                let pot = v.power_on_time?.hours;
+                let poth = v.power_cycle_count;
+                pot = ( pot !== undefined ) ? (" | 通电: " + pot + '时' + ( poth ? ',次: '+ poth : '' )) : '';
+                let smart = v.smart_status?.passed;
+                smart = (smart === undefined ) ? '' : ' | SMART: ' + (smart ? '正常' : '警告!');
+                return model + sn + temp + pot + smart;
+            }catch(e){ return '无法获得有效消息'; };
+         }
+    },
 EOF
-		let sdi++
-	done
+    let sdi++
+}
+
+if $sODisksInfo; then
+    # 第一遍扫描：只处理非 USB 的 SATA 硬盘
+    for sd in $(ls /dev/sd[a-z] 2> /dev/null); do
+        sdsn=$(basename $sd)
+        [ -f /sys/block/$sdsn/queue/rotational ] || continue
+        
+        if [[ "$(readlink -f /sys/class/block/$sdsn)" != *"usb"* ]]; then
+            if [ "$(cat /sys/block/$sdsn/queue/rotational)" = "0" ]; then
+                generate_disk_config "$sd" false false "SATA硬盘${hdi}(SSD)"
+            else
+                generate_disk_config "$sd" false true "SATA硬盘${hdi}(HDD)"
+            fi
+            let hdi++
+        fi
+    done
+
+    # 第二遍扫描：只处理 USB 存储
+    for sd in $(ls /dev/sd[a-z] 2> /dev/null); do
+        sdsn=$(basename $sd)
+        [ -f /sys/block/$sdsn/queue/rotational ] || continue
+        
+        if [[ "$(readlink -f /sys/class/block/$sdsn)" == *"usb"* ]]; then
+            generate_disk_config "$sd" true false "外部USB存储$usbi"
+            let usbi++
+        fi
+    done
 fi
-echo "已添加 $sdi 块SATA固态和机械硬盘"
+echo "已完成排序：添加了 $hdi 块SATA硬盘和 $usbi 块USB设备。"
 
 echo 开始修改nodes.pm文件
 if ! grep -q 'modbyshowtempfreq' $np ;then
@@ -424,7 +518,7 @@ fi
 echo 开始修改pvemanagerlib.js文件
 if ! grep -q 'modbyshowtempfreq' $pvejs ;then
 	[ ! -e $pvejs.$pvever.bak ]  && cp $pvejs $pvejs.$pvever.bak
-	
+		
 	if [ "$(sed -n '/pveversion/,+3{
 			/},/{=;p;q}
 		}' $pvejs)" ];then 
@@ -511,25 +605,32 @@ fi
 echo 温度，频率，硬盘信息相关修改已完成
 echo ------------------------
 echo ------------------------
+# 修复 PVE9 “套接字” 翻译
+pvelang=/usr/share/pve-i18n/pve-lang-zh_CN.js
+
+if [ -f "$pvelang" ]; then
+	[ ! -e $pvelang.$pvever.bak ] && cp $pvelang $pvelang.$pvever.bak
+
+	sed -i 's/"套接字"/"插槽"/g' $pvelang
+	sed -i 's/"{n}个套接字"/"{n}个插槽"/g' $pvelang
+
+	echo 已修复 PVE9 中文翻译
+fi
 echo 开始修改proxmoxlib.js文件
 echo 去除订阅弹窗
-
 if ! grep -q 'modbyshowtempfreq' $plibjs ;then
-
 	[ ! -e $plibjs.$pvever.bak ] && cp $plibjs $plibjs.$pvever.bak
-	
-	if [ "$(sed -n '/\/nodes\/localhost\/subscription/{=;p;q}' $plibjs)" ];then 
-		sed -i '/\/nodes\/localhost\/subscription/,+10{
-			/res === null/{
-				N
-				s/(.*)/(false)/
-				a //modbyshowtempfreq
-			}
-		}' $plibjs
-		
-		$dmode && sed -n "/\/nodes\/localhost\/subscription/,+10p" $plibjs
-	else 
-		echo 找不到修改点，放弃修改这个
+
+	# PVE8/PVE9 通用 patch
+	if grep -q "checked_command: function (orig_cmd)" $plibjs; then
+		sed -i "/checked_command: function (orig_cmd)/,/assemble_field_data/{
+			s/res.data.status.toLowerCase() !== 'active'/false/g
+		}" $plibjs
+
+		echo "//modbyshowtempfreq" >> $plibjs
+		echo 已移除订阅弹窗
+	else
+		echo 找不到 subscription 修改点
 	fi
 else
 	echo 已经修改过
