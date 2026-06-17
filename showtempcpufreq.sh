@@ -519,15 +519,17 @@ if ! grep -q 'modbyshowtempfreq' $plibjs ;then
 	[ ! -e $plibjs.$pvever.bak ] && cp $plibjs $plibjs.$pvever.bak
 	
 	if [ "$(sed -n '/\/nodes\/localhost\/subscription/{=;p;q}' $plibjs)" ];then 
-		sed -i '/\/nodes\/localhost\/subscription/,+10{
-			/res === null/{
-				N
-				s/(.*)/(false)/
-				a //modbyshowtempfreq
+		sed -E -i '/\/nodes\/localhost\/subscription/,+15{
+			/ if \(/,/Ext\.Msg\.show/{
+			H
+			/Ext\.Msg\.show/!d
+			x
+			s/(.* if \().*(\).*)/\1false\2/
+			i\/\/modbyshowtempfreq
 			}
 		}' $plibjs
 		
-		$dmode && sed -n "/\/nodes\/localhost\/subscription/,+10p" $plibjs
+		$dmode && sed -n "/\/nodes\/localhost\/subscription/,+15p" $plibjs
 	else 
 		echo 找不到修改点，放弃修改这个
 	fi
