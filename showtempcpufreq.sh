@@ -443,7 +443,7 @@ if ! grep -q 'modbyshowtempfreq' $pvejs ;then
 	echo 修改页面高度
 	#统计加了几条
 	addRs=$(grep -c '\$res' $contentfornp)
-	addHei=$(( 28 * addRs))
+	addHei=$(( 30 * addRs))
 	$dmode && echo "添加了$addRs条内容,增加高度为:${addHei}px"
 
 
